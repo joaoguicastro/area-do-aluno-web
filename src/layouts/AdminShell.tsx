@@ -1,10 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NavLink, Outlet } from 'react-router-dom';
-import { GraduationCap, Layers, Users, ClipboardList, ListChecks, FileText, LayoutDashboard, LogOut } from 'lucide-react';
+import {
+  GraduationCap,
+  Layers,
+  Users,
+  ClipboardList,
+  ListChecks,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  PlayCircle,
+  type LucideIcon,
+} from 'lucide-react';
 import ThemeToggle from '../theme/ThemeToggle';
 import { useAuth } from '../auth/store';
 
-const links = [
+type LinkItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+};
+
+const links: LinkItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/cursos', label: 'Cursos', icon: GraduationCap },
   { to: '/admin/turmas', label: 'Turmas', icon: Layers },
@@ -12,6 +30,8 @@ const links = [
   { to: '/admin/matriculas', label: 'Matrículas', icon: ClipboardList },
   { to: '/admin/exercicios', label: 'Exercícios', icon: ListChecks },
   { to: '/admin/provas', label: 'Provas', icon: FileText },
+  // 🔥 Novo item
+  { to: '/admin/videoaulas', label: 'Vídeo-aulas', icon: PlayCircle },
 ];
 
 export default function AdminShell() {
@@ -31,11 +51,13 @@ export default function AdminShell() {
             <NavLink
               key={l.to}
               to={l.to}
-              end={l.end as any}
+              end={l.end}
               className={({ isActive }) =>
                 [
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition',
-                  isActive ? 'bg-[var(--brand-primary)] text-white' : 'hover:bg-black/5 dark:hover:bg-white/5',
+                  isActive
+                    ? 'bg-[var(--brand-primary)] text-white'
+                    : 'hover:bg-black/5 dark:hover:bg-white/5',
                 ].join(' ')
               }
             >
@@ -52,11 +74,15 @@ export default function AdminShell() {
             <div className="md:hidden font-semibold">Admin</div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <button className="btn btn-ghost" onClick={clear}><LogOut size={18}/> <span className="hidden sm:inline">Sair</span></button>
+              <button className="btn btn-ghost" onClick={clear}>
+                <LogOut size={18} /> <span className="hidden sm:inline">Sair</span>
+              </button>
             </div>
           </div>
         </header>
-        <main className="max-w-7xl mx-auto p-4"><Outlet /></main>
+        <main className="max-w-7xl mx-auto p-4">
+          <Outlet />
+        </main>
       </div>
     </div>
   );

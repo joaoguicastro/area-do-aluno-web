@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NavLink, Outlet } from 'react-router-dom';
-import { Home, GraduationCap, ListChecks, FileText, LogOut } from 'lucide-react';
+import { Home, GraduationCap, LogOut } from 'lucide-react';
 import ThemeToggle from '../theme/ThemeToggle';
 import { useAuth } from '../auth/store';
 
 const links = [
   { to: '/aluno', label: 'Início', icon: Home, end: true },
   { to: '/aluno/cursos', label: 'Meus Cursos', icon: GraduationCap },
-  { to: '/aluno/exercicios', label: 'Exercícios', icon: ListChecks },
-  { to: '/aluno/provas', label: 'Provas', icon: FileText },
+  // { to: '/aluno/exercicios', label: 'Exercícios', icon: ListChecks },
+  // { to: '/aluno/provas', label: 'Provas', icon: FileText },
 ];
 
 export default function AlunoShell() {

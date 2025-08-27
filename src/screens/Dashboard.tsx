@@ -8,11 +8,11 @@ export default function Dashboard() {
   const clear = useAuth((s) => s.clear);
   const tiles = [
     { to: '/admin/cursos', icon: GraduationCap, title: 'Cursos' },
-    { to: '/turmas', icon: Layers, title: 'Turmas' },
-    { to: '/alunos', icon: Users, title: 'Alunos' },
-    { to: '/matriculas', icon: ClipboardList, title: 'Matrículas' },
-    { to: '/exercicios', icon: ListChecks, title: 'Exercícios' },
-    { to: '/provas', icon: FileText, title: 'Provas' },
+    { to: '/admin/turmas', icon: Layers, title: 'Turmas' },
+    { to: '/admin/alunos', icon: Users, title: 'Alunos' },
+    { to: '/admin/matriculas', icon: ClipboardList, title: 'Matrículas' },
+    { to: '/admin/exercicios', icon: ListChecks, title: 'Exercícios' },
+    { to: '/admin/provas', icon: FileText, title: 'Provas' },
   ];
 
   return (

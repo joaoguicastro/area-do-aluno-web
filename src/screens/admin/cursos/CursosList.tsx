@@ -2,13 +2,14 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listCursos, createCurso, deleteCurso } from '../../services/cursos';
-import type { Curso } from '../../services/cursos'; // <- type-only import ✅
-import { Button } from '../../ui/Button';
-import { Card } from '../../ui/Card';
-import { Input } from '../../ui/Input';
-import { useDebounce } from '../../utils/useDebounce';
+import { listCursos, createCurso, deleteCurso } from '../../../services/cursos';
+import type { Curso } from '../../../services/cursos'; // <- type-only import ✅
+import { Button } from '../../../ui/Button';
+import { Card } from '../../../ui/Card';
+import { Input } from '../../../ui/Input';
+import { useDebounce } from '../../../utils/useDebounce';
 import { Plus, Trash2 } from 'lucide-react';
+import { ConfirmModal } from '../../../ui/Delete';
 
 export default function CursosList() {
   const qc = useQueryClient();
@@ -39,6 +40,7 @@ export default function CursosList() {
   });
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [openModal, setOpenModal] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -60,9 +62,9 @@ export default function CursosList() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir este curso?')) return;
     await deleteCurso(id);
     await qc.invalidateQueries({ queryKey: ['cursos'] });
+    setOpenModal(false);
   }
 
   const total = data?.total ?? 0;
@@ -109,10 +111,15 @@ export default function CursosList() {
                     <button
                       className="btn btn-ghost text-red-600"
                       title="Excluir"
-                      onClick={() => handleDelete(c.id)}
+                      onClick={() => setOpenModal(true)}
                     >
                       <Trash2 size={16}/>
                     </button>
+                    <ConfirmModal
+                      open={ openModal}
+                      onConfirm= {() => handleDelete(c.id)}
+                      onCancel={() => setOpenModal(false)}
+                    />
                   </td>
                 </tr>
               ))}

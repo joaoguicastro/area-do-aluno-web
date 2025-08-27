@@ -33,3 +33,8 @@ export async function updateCurso(id: string, payload: Partial<{ nome: string; m
 export async function deleteCurso(id: string) {
   await api.delete(`/cursos/${id}`);
 }
+
+export async function getCursoById(id: string): Promise<Curso> {
+  const res = await api.get(`/cursos/${id}`);
+  return res.data?.curso ?? res.data;
+}

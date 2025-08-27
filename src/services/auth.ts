@@ -9,24 +9,47 @@ function parseJwt<T = any>(token: string): T | null {
   } catch { return null; }
 }
 
-export async function fetchProfile(token: string): Promise<Profile | null> {
-  try {
-    const { data } = await api.get<{ user?: any; profile?: any; role?: Role; alunoId?: string }>('/auth/me');
-    const p = data.profile ?? data.user ?? data;
-    const role: Role = (data.role ?? p?.role ?? 'ADMIN') as Role;
-    return {
-      id: p?.id ?? p?.userId ?? '',
-      role,
-      nome: p?.nome ?? p?.name ?? null,
-      email: p?.email ?? null,
-      alunoId: p?.alunoId ?? data.alunoId ?? null,
-    };
-  } catch {
-    const payload = parseJwt<any>(token);
-    if (!payload) return null;
-    const role = (payload.role ?? payload.claims?.role ?? 'ADMIN') as Role;
-    const alunoId = payload.alunoId ?? payload.claims?.alunoId ?? null;
-    const id = payload.sub ?? payload.userId ?? '';
-    return { id, role, alunoId, nome: payload.nome ?? null, email: payload.email ?? null };
+function normalizeRole(r: any): Role {
+  switch (String(r ?? '').toLowerCase()) {
+    case 'aluno': return 'ALUNO';
+    case 'master': return 'MASTER';
+    case 'admin':
+    default: return 'ADMIN';
   }
+}
+
+/**
+ * Busca o perfil a partir do token.
+ * - Se ALUNO, consulta /aluno/me para pegar dados completos.
+ * - Para admin/master/operador, retorna dados básicos do token (ou adapte para /users/me se tiver).
+ */
+export async function fetchProfile(token: string): Promise<Profile | null> {
+  const payload = parseJwt<any>(token);
+  if (!payload) return null;
+
+  const role = normalizeRole(payload.role ?? payload.claims?.role ?? 'admin');
+
+  if (role === 'ALUNO') {
+    try {
+      const { data } = await api.get<{ aluno: { id: string; nome: string; email?: string | null; matricula: string } }>('/aluno/me');
+      return {
+        id: data.aluno.id,
+        role: 'ALUNO',
+        nome: data.aluno.nome ?? null,
+        email: data.aluno.email ?? null,
+        alunoId: data.aluno.id,
+      };
+    } catch {
+      const id = payload.sub ?? payload.userId ?? '';
+      return { id, role: 'ALUNO', alunoId: id, nome: payload.nome ?? null, email: payload.email ?? null };
+    }
+  }
+
+  return {
+    id: payload.sub ?? payload.userId ?? '',
+    role,
+    nome: payload.nome ?? null,
+    email: payload.email ?? null,
+    alunoId: null,
+  };
 }
