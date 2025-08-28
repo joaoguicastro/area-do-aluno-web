@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NavLink, Outlet } from 'react-router-dom';
 import {
@@ -22,20 +23,24 @@ type LinkItem = {
   end?: boolean;
 };
 
-const links: LinkItem[] = [
-  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/cursos', label: 'Cursos', icon: GraduationCap },
-  { to: '/admin/turmas', label: 'Turmas', icon: Layers },
-  { to: '/admin/alunos', label: 'Alunos', icon: Users },
-  { to: '/admin/matriculas', label: 'Matrículas', icon: ClipboardList },
-  { to: '/admin/exercicios', label: 'Exercícios', icon: ListChecks },
-  { to: '/admin/provas', label: 'Provas', icon: FileText },
-  // 🔥 Novo item
-  { to: '/admin/videoaulas', label: 'Vídeo-aulas', icon: PlayCircle },
-];
-
 export default function AdminShell() {
   const clear = useAuth((s) => s.clear);
+  const role = useAuth((s) => s.role); // MASTER | ADMIN | ...
+
+  const links: LinkItem[] = [
+    { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
+    { to: '/admin/cursos', label: 'Cursos', icon: GraduationCap },
+    { to: '/admin/turmas', label: 'Turmas', icon: Layers },
+    { to: '/admin/alunos', label: 'Alunos', icon: Users },
+    { to: '/admin/matriculas', label: 'Matrículas', icon: ClipboardList },
+    { to: '/admin/exercicios', label: 'Exercícios', icon: ListChecks },
+    { to: '/admin/provas', label: 'Provas', icon: FileText },
+    { to: '/admin/videoaulas', label: 'Vídeo-aulas', icon: PlayCircle },
+    ...(role === 'MASTER'
+      ? [{ to: '/admin/funcionarios', label: 'Funcionários', icon: Users } as LinkItem]
+      : []),
+  ];
+
   return (
     <div className="min-h-screen grid md:grid-cols-[260px_1fr]">
       <aside className="hidden md:block border-r border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/30 backdrop-blur">

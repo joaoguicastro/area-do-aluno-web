@@ -10,16 +10,36 @@ import { Input } from '../../../ui/Input';
 import { useDebounce } from '../../../utils/useDebounce';
 import { Plus, Trash2 } from 'lucide-react';
 
+// --------- helpers ----------
 function onlyDigits(v: string) {
   return (v || '').replace(/\D/g, '');
 }
 function maskCPF(v: string) {
   const d = onlyDigits(v).slice(0, 11);
-  return d
-    .replace(/^(\d{3})(\d)/, '$1.$2')
-    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1-$2');
+  if (!d) return '';
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
 }
+function maskDMY(value: string): string {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+function toISOFromDMY(dmy: string): string | null {
+  const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy] = m;
+  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  const ok =
+    d.getFullYear() === Number(yyyy) &&
+    d.getMonth() === Number(mm) - 1 &&
+    d.getDate() === Number(dd);
+  return ok ? `${yyyy}-${mm}-${dd}` : null;
+}
+// ----------------------------
 
 export default function AlunosList() {
   const qc = useQueryClient();
@@ -48,10 +68,10 @@ export default function AlunosList() {
   const [form, setForm] = useState<{
     nome: string;
     cpfAluno: string;
-    dataNascimentoAluno: string;
+    dataNascimentoAluno: string;         // DD/MM/AAAA (UI)
     nomeResponsavel: string;
     cpfResponsavel: string;
-    dataNascimentoResponsavel: string;
+    dataNascimentoResponsavel: string;   // DD/MM/AAAA (UI)
     rua: string;
     numero: string;
     bairro: string;
@@ -84,20 +104,37 @@ export default function AlunosList() {
     setCreating(true);
     setErr(null);
     try {
+      // Validar e converter datas
+      const isoAluno = toISOFromDMY(form.dataNascimentoAluno);
+      if (!isoAluno) {
+        setErr('Data de nascimento do aluno inválida. Use DD/MM/AAAA.');
+        setCreating(false);
+        return;
+      }
+      const isoResp = toISOFromDMY(form.dataNascimentoResponsavel);
+      if (!isoResp) {
+        setErr('Data de nascimento do responsável inválida. Use DD/MM/AAAA.');
+        setCreating(false);
+        return;
+      }
+
       const payload: CreateAlunoPayload = {
         nome: form.nome.trim(),
         cpfAluno: onlyDigits(form.cpfAluno),
-        dataNascimentoAluno: form.dataNascimentoAluno,
+        dataNascimentoAluno: isoAluno, // ISO p/ Zod z.coerce.date()
         nomeResponsavel: form.nomeResponsavel.trim(),
         cpfResponsavel: onlyDigits(form.cpfResponsavel),
-        dataNascimentoResponsavel: form.dataNascimentoResponsavel,
+        dataNascimentoResponsavel: isoResp, // ISO
         rua: form.rua.trim(),
         numero: form.numero.trim(),
         bairro: form.bairro.trim(),
         cidade: form.cidade.trim(),
-        telefone: form.telefone ? form.telefone.trim() : null,
-        email: form.email ? form.email.trim() : null,
-        fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : null,
+
+        // >>> DIFERENÇA PRINCIPAL: opcionais como undefined (não null)
+        telefone: form.telefone ? form.telefone.trim() : undefined,
+        email: form.email ? form.email.trim() : undefined,
+        fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : undefined,
+
         senha: form.senha,
         prefixoMatricula: form.prefixoMatricula || 'INF',
       };
@@ -123,7 +160,11 @@ export default function AlunosList() {
       });
       await qc.invalidateQueries({ queryKey: ['alunos'] });
     } catch (e: any) {
-      setErr(e?.response?.data?.message ?? 'Erro ao criar aluno');
+      const apiMsg =
+        e?.response?.data?.issues?.[0]?.message ||
+        e?.response?.data?.message ||
+        'Erro ao criar aluno';
+      setErr(apiMsg);
     } finally {
       setCreating(false);
     }
@@ -237,30 +278,43 @@ export default function AlunosList() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <div className="label">Nome</div>
-                  <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
+                  <Input
+                    value={form.nome}
+                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                    required
+                  />
                 </div>
+
                 <div>
                   <div className="label">CPF do aluno</div>
                   <Input
                     value={form.cpfAluno}
-                    onChange={(e) => setForm({ ...form, cpfAluno: e.target.value })}
+                    onChange={(e) => setForm({ ...form, cpfAluno: maskCPF(e.target.value) })}
                     placeholder="000.000.000-00"
                     required
                   />
                 </div>
+
                 <div>
                   <div className="label">Data de nascimento (aluno)</div>
                   <Input
-                    type="date"
+                    placeholder="DD/MM/AAAA"
                     value={form.dataNascimentoAluno}
-                    onChange={(e) => setForm({ ...form, dataNascimentoAluno: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, dataNascimentoAluno: maskDMY(e.target.value) })
+                    }
                     required
                   />
                 </div>
+
                 <div>
                   <div className="label">Telefone</div>
-                  <Input value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+                  <Input
+                    value={form.telefone}
+                    onChange={(e) => setForm({ ...form, telefone: e.target.value })}
+                  />
                 </div>
+
                 <div>
                   <div className="label">E-mail</div>
                   <Input
@@ -269,9 +323,13 @@ export default function AlunosList() {
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                   />
                 </div>
+
                 <div>
                   <div className="label">URL da foto (opcional)</div>
-                  <Input value={form.fotoUrl} onChange={(e) => setForm({ ...form, fotoUrl: e.target.value })} />
+                  <Input
+                    value={form.fotoUrl}
+                    onChange={(e) => setForm({ ...form, fotoUrl: e.target.value })}
+                  />
                 </div>
               </div>
 
@@ -284,21 +342,28 @@ export default function AlunosList() {
                     required
                   />
                 </div>
+
                 <div>
                   <div className="label">CPF do responsável</div>
                   <Input
                     value={form.cpfResponsavel}
-                    onChange={(e) => setForm({ ...form, cpfResponsavel: e.target.value })}
+                    onChange={(e) => setForm({ ...form, cpfResponsavel: maskCPF(e.target.value) })}
                     placeholder="000.000.000-00"
                     required
                   />
                 </div>
+
                 <div>
                   <div className="label">Data de nascimento (responsável)</div>
                   <Input
-                    type="date"
+                    placeholder="DD/MM/AAAA"
                     value={form.dataNascimentoResponsavel}
-                    onChange={(e) => setForm({ ...form, dataNascimentoResponsavel: e.target.value })}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        dataNascimentoResponsavel: maskDMY(e.target.value),
+                      })
+                    }
                     required
                   />
                 </div>
@@ -307,19 +372,38 @@ export default function AlunosList() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <div className="label">Rua</div>
-                  <Input value={form.rua} onChange={(e) => setForm({ ...form, rua: e.target.value })} required />
+                  <Input
+                    value={form.rua}
+                    onChange={(e) => setForm({ ...form, rua: e.target.value })}
+                    required
+                  />
                 </div>
+
                 <div>
                   <div className="label">Número</div>
-                  <Input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} required />
+                  <Input
+                    value={form.numero}
+                    onChange={(e) => setForm({ ...form, numero: e.target.value })}
+                    required
+                  />
                 </div>
+
                 <div>
                   <div className="label">Bairro</div>
-                  <Input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} required />
+                  <Input
+                    value={form.bairro}
+                    onChange={(e) => setForm({ ...form, bairro: e.target.value })}
+                    required
+                  />
                 </div>
+
                 <div className="sm:col-span-3">
                   <div className="label">Cidade</div>
-                  <Input value={form.cidade} onChange={(e) => setForm({ ...form, cidade: e.target.value })} required />
+                  <Input
+                    value={form.cidade}
+                    onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+                    required
+                  />
                 </div>
               </div>
 
@@ -334,6 +418,7 @@ export default function AlunosList() {
                     required
                   />
                 </div>
+
                 <div>
                   <div className="label">Prefixo da matrícula</div>
                   <Input
