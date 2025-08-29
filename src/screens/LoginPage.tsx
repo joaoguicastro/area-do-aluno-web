@@ -43,7 +43,6 @@ export default function LoginPage() {
       if (!token) throw new Error('Token não encontrado na resposta.');
       setToken(token);
 
-      // tenta montar perfil pelo token/rotas
       const p = await fetchProfile(token);
       if (p) {
         setProfile(p);
@@ -51,7 +50,6 @@ export default function LoginPage() {
         return;
       }
 
-      // fallback: usa role do servidor (pode vir "aluno" minúsculo)
       const serverRole = normalizeRole(data.role);
       setManualRole(serverRole);
       window.location.href = serverRole === 'ALUNO' ? '/aluno' : '/admin';
@@ -137,10 +135,6 @@ export default function LoginPage() {
           <Button disabled={loading} className="w-full">
             {loading ? 'Entrando…' : 'Entrar'}
           </Button>
-
-          <p className="text-xs text-[color:var(--text-muted)] mt-1">
-            O servidor retorna <code>role</code> minúscula. Normalizamos para decidir a navegação.
-          </p>
         </form>
       </Card>
     </div>

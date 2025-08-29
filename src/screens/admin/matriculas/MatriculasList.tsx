@@ -19,6 +19,14 @@ import { useDebounce } from '../../../utils/useDebounce';
 import { Plus, Trash2 } from 'lucide-react';
 import { ConfirmModal } from '../../../ui/Delete';
 
+function formatISODate(iso?: string | null) {
+  if (!iso) return '—';
+  const ymd = iso.split('T')[0]; // suporta 'YYYY-MM-DD' e 'YYYY-MM-DDTHH:mm:ssZ'
+  const [y, m, d] = ymd.split('-');
+  if (!y || !m || !d) return '—';
+  return `${d}/${m}/${y}`;
+}
+
 export default function MatriculasList() {
   const qc = useQueryClient();
   const [q, setQ] = useState('');
@@ -72,17 +80,17 @@ export default function MatriculasList() {
     dataFim: '',
   });
 
-  // 🔁 Busca TODAS as turmas (fallback garantido) e filtra no client por cursoId
+  // 🔁 Busca turmas do curso selecionado (para o select)
   const turmasQuery = useQuery({
-  queryKey: ['turmas-by-curso', form.cursoId],
-  queryFn: async () => {
-    if (!form.cursoId) return [] as Turma[];
-    const itens = await listTurmasByCursoId(form.cursoId);
-    return itens;
-  },
-  enabled: !!form.cursoId,
-  staleTime: 1000 * 60 * 2,
-});
+    queryKey: ['turmas-by-curso', form.cursoId],
+    queryFn: async () => {
+      if (!form.cursoId) return [] as Turma[];
+      const itens = await listTurmasByCursoId(form.cursoId);
+      return itens;
+    },
+    enabled: !!form.cursoId,
+    staleTime: 1000 * 60 * 2,
+  });
 
   const turmasFiltradas = turmasQuery.data ?? [];
 
@@ -116,9 +124,7 @@ export default function MatriculasList() {
     } finally {
       setCreating(false);
     }
-    console.log(data)
   }
-
 
   async function handleDelete(id: string) {
     await deleteMatricula(id);
@@ -127,61 +133,59 @@ export default function MatriculasList() {
   }
 
   const cursosMap = useMemo(() => {
-      const m: Record<string, string> = {};
-      cursosQuery.data?.data?.forEach((c: Curso) => {
-        m[c.id] = c.nome;
-      });
-      return m;
-    }, [cursosQuery.data]);
-
-    const alunosMap = useMemo(() => {
-      const m: Record<string, string> = {};
-      alunosQuery.data?.data?.forEach((a: Aluno) => {
-        m[a.id] = a.nome;
-      });
-      return m;
-    }, [alunosQuery.data]);
-
-    // ids de turmas presentes na TABELA (ignora null e repetidos)
-    const turmaIdsFromTable = useMemo(() => {
-      const set = new Set<string>();
-      (data?.data ?? []).forEach((m: Matricula) => {
-        if (m.turmaId) set.add(m.turmaId);
-      });
-      return Array.from(set);
-    }, [data?.data]);
-
-    type TurmaNameMap = Record<string, string>;
-
-    const turmasByIdsQuery = useQuery({
-      queryKey: ['turmas-by-ids', turmaIdsFromTable],
-      // retorna um MAP pronto { id: nome }
-      queryFn: async (): Promise<TurmaNameMap> => {
-        const ids = turmaIdsFromTable.filter(Boolean);
-        if (ids.length === 0) return {};
-        const turmas = await Promise.all(ids.map((id) => getTurmaById(id)));
-        const map: TurmaNameMap = {};
-        turmas.forEach((t) => {
-          if (t?.id && t?.nome) map[t.id] = t.nome;
-        });
-        return map;
-      },
-      enabled: turmaIdsFromTable.length > 0,
-      staleTime: 1000 * 60 * 5,
+    const m: Record<string, string> = {};
+    cursosQuery.data?.data?.forEach((c: Curso) => {
+      m[c.id] = c.nome;
     });
+    return m;
+  }, [cursosQuery.data]);
 
-      const turmasMap = useMemo(() => {
-        const m: Record<string, string> = {};
-        // nomes vindos dos ids presentes na TABELA
-        Object.assign(m, turmasByIdsQuery.data ?? {});
-        // nomes vindos do curso selecionado (útil para o select do modal)
-        (turmasQuery.data ?? []).forEach((t: Turma) => {
-          if (t?.id && t?.nome) m[t.id] = t.nome;
-        });
-        return m;
-      }, [turmasByIdsQuery.data, turmasQuery.data]);
+  const alunosMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    alunosQuery.data?.data?.forEach((a: Aluno) => {
+      m[a.id] = a.nome;
+    });
+    return m;
+  }, [alunosQuery.data]);
 
+  // ids de turmas presentes na TABELA (ignora null e repetidos)
+  const turmaIdsFromTable = useMemo(() => {
+    const set = new Set<string>();
+    (data?.data ?? []).forEach((m: Matricula) => {
+      if (m.turmaId) set.add(m.turmaId);
+    });
+    return Array.from(set);
+  }, [data?.data]);
 
+  type TurmaNameMap = Record<string, string>;
+
+  const turmasByIdsQuery = useQuery({
+    queryKey: ['turmas-by-ids', turmaIdsFromTable],
+    // retorna um MAP pronto { id: nome }
+    queryFn: async (): Promise<TurmaNameMap> => {
+      const ids = turmaIdsFromTable.filter(Boolean);
+      if (ids.length === 0) return {};
+      const turmas = await Promise.all(ids.map((id) => getTurmaById(id)));
+      const map: TurmaNameMap = {};
+      turmas.forEach((t) => {
+        if (t?.id && t?.nome) map[t.id] = t.nome;
+      });
+      return map;
+    },
+    enabled: turmaIdsFromTable.length > 0,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const turmasMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    // nomes vindos dos ids presentes na TABELA
+    Object.assign(m, turmasByIdsQuery.data ?? {});
+    // nomes vindos do curso selecionado (útil para o select do modal)
+    (turmasQuery.data ?? []).forEach((t: Turma) => {
+      if (t?.id && t?.nome) m[t.id] = t.nome;
+    });
+    return m;
+  }, [turmasByIdsQuery.data, turmasQuery.data]);
 
   const total = data?.total ?? 0;
   const perPage = data?.perPage ?? 10;
@@ -226,9 +230,11 @@ export default function MatriculasList() {
                 <tr key={m.id} className="border-t border-black/5">
                   <td className="py-3">{m.alunoNome ?? alunosMap[m.alunoId] ?? m.alunoId}</td>
                   <td className="py-3">{m.cursoNome ?? cursosMap[m.cursoId] ?? m.cursoId}</td>
-                  <td className="py-3">{m.turmaNome ??(m.turmaId ? turmasMap[m.turmaId] : undefined) ?? (m.turmaId || '-')}</td>
-                  <td className="py-3">{m.dataInicio ? new Date(m.dataInicio).toLocaleDateString() : '—'}</td>
-                  <td className="py-3">{m.dataFim ? new Date(m.dataFim).toLocaleDateString() : '—'}</td>
+                  <td className="py-3">
+                    {m.turmaNome ?? (m.turmaId ? turmasMap[m.turmaId] : undefined) ?? (m.turmaId || '-')}
+                  </td>
+                  <td className="py-3">{formatISODate(m.dataInicio)}</td>
+                  <td className="py-3">{formatISODate(m.dataFim)}</td>
                   <td className="py-3">
                     <span className="inline-block px-2 py-0.5 rounded bg-black/5 dark:bg-white/10">
                       {m.status}
