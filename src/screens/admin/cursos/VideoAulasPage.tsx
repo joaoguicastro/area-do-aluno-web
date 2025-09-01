@@ -1,10 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { listCursos, type Curso } from '../../../services/cursos';
-import { addVideoAula, listVideoAulas, deleteVideoAula, type VideoAula } from '../../../services/videoaulas';
+import {
+  addVideoAula,
+  listVideoAulas,
+  deleteVideoAula,
+  type VideoAula,
+} from '../../../services/videoaulas';
 import { uploadVideo } from '../../../services/uploads';
+import { listModulos, type Modulo } from '../../../services/modulos';
 
 import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
@@ -15,6 +21,7 @@ import { api } from '../../../lib/api';
 
 export default function VideoAulasPage() {
   const qc = useQueryClient();
+
   const [cursoId, setCursoId] = useState('');
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -26,78 +33,169 @@ export default function VideoAulasPage() {
     ordem: string;
     duracaoMin: string;
     file: File | null;
+    moduloId: string; // opcional
   }>({
     titulo: '',
     descricao: '',
     ordem: '',
     duracaoMin: '',
     file: null,
+    moduloId: '',
   });
 
+  // === Cursos para o select
   const cursosQuery = useQuery({
     queryKey: ['cursos-for-select'],
-    queryFn: () => listCursos({ perPage: 100 }),
+    queryFn: async () => {
+      const res: any = await listCursos();
+      return Array.isArray(res) ? (res as Curso[]) : ((res?.data ?? []) as Curso[]);
+    },
     staleTime: 1000 * 60 * 5,
+    retry: false,
   });
 
-  const videosQuery = useQuery({
-    queryKey: ['videoaulas', { cursoId }],
+  // === Módulos do curso selecionado
+  const modulosQuery = useQuery({
+    queryKey: ['modulos', cursoId],
+    queryFn: async () => {
+      if (!cursoId) return [] as Modulo[];
+      const raw = await listModulos(cursoId);
+      return Array.isArray(raw) ? (raw as Modulo[]) : (((raw as any)?.data ?? []) as Modulo[]);
+    },
+    enabled: !!cursoId,
+    staleTime: 1000 * 30,
+    retry: false,
+  });
+
+  // memo p/ satisfazer exhaustive-deps
+  const modulos = useMemo(
+    () => ((modulosQuery.data ?? []) as Modulo[]),
+    [modulosQuery.data]
+  );
+
+  // === Vídeo-aulas do curso (array direto)
+  const videosQuery = useQuery<VideoAula[]>({
+    queryKey: ['videoaulas', cursoId],
     queryFn: () => listVideoAulas(cursoId),
     enabled: !!cursoId,
     staleTime: 1000 * 30,
+    retry: false,
   });
 
-  const videos = videosQuery.data?.data ?? [];
+  // memo p/ satisfazer exhaustive-deps + tipar length
+  const videos = useMemo(
+    () => ((videosQuery.data ?? []) as VideoAula[]),
+    [videosQuery.data]
+  );
 
+  // === Agrupamento por módulo (inclui "Sem módulo")
+  const grupos = useMemo(() => {
+    type Grupo = { key: string; titulo: string; ordem: number | null; itens: VideoAula[] };
+    const by: Record<string, Grupo> = {};
+
+    // cria grupos para cada módulo
+    for (const md of modulos) {
+      const key = md.id;
+      by[key] = by[key] ?? {
+        key,
+        titulo: `${md.ordem ? md.ordem + '. ' : ''}${md.nome}`,
+        ordem: md.ordem ?? null,
+        itens: [],
+      };
+    }
+    // grupo "Sem módulo"
+    by['__SEM__'] = by['__SEM__'] ?? { key: '__SEM__', titulo: 'Sem módulo', ordem: 9_999_999, itens: [] };
+
+    // distribui vídeos
+    for (const v of videos) {
+      const key = (v as any).moduloId || '__SEM__';
+      (by[key] ?? by['__SEM__']).itens.push(v);
+    }
+
+    // ordena vídeos dentro do grupo
+    for (const g of Object.values(by)) {
+      g.itens.sort(
+        (a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+      );
+    }
+
+    // retorna em ordem de módulo e esconde grupos vazios
+    return Object.values(by)
+      .filter((g) => g.itens.length > 0)
+      .sort((a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || a.titulo.localeCompare(b.titulo));
+  }, [videos, modulos]);
+
+  // === Handlers
   async function handleCreate(e: React.FormEvent) {
-  e.preventDefault();
-  if (!cursoId) return setErr('Selecione um curso.');
-  if (!form.titulo.trim()) return setErr('Informe o título.');
-  if (!form.file) return setErr('Selecione um arquivo de vídeo.');
+    e.preventDefault();
+    if (!cursoId) return setErr('Selecione um curso.');
+    if (!form.titulo.trim()) return setErr('Informe o título.');
+    if (!form.file) return setErr('Selecione um arquivo de vídeo.');
 
-  setCreating(true);
-  setErr(null);
-  setProgress(0);
-  try {
-    // 1) Upload do arquivo
-    const { url } = await uploadVideo(form.file, (p) => setProgress(p));
-
-    // 2) Garanta URL ABSOLUTA p/ passar no z.string().url()
-    const base = (api as any)?.defaults?.baseURL || window.location.origin;
-    const absoluteUrl = url.startsWith('http') ? url : new URL(url, base).toString();
-
-    // 3) Monte o payload SEM nulls (omitindo campos vazios)
-    const payload: any = {
-      titulo: form.titulo.trim(),
-      urlVideo: absoluteUrl,
-    };
-    if (form.descricao.trim()) payload.descricao = form.descricao.trim();
-    if (form.ordem) payload.ordem = Number(form.ordem);
-    if (form.duracaoMin) payload.duracaoMin = Number(form.duracaoMin);
-
-    // 4) Chama a rota existente
-    await addVideoAula(cursoId, payload);
-
-    setForm({ titulo: '', descricao: '', ordem: '', duracaoMin: '', file: null });
+    setCreating(true);
+    setErr(null);
     setProgress(0);
-    await qc.invalidateQueries({ queryKey: ['videoaulas', { cursoId }] });
-  } catch (e: any) {
-    setErr(e?.response?.data?.message ?? 'Erro ao enviar/criar vídeo-aula');
-  } finally {
-    setCreating(false);
-  }
-  }
 
+    try {
+      // 1) upload
+      const { url } = await uploadVideo(form.file, (p) => setProgress(p));
+
+      // 2) garantir URL absoluta
+      const base = (api as any)?.defaults?.baseURL || window.location.origin;
+      const absoluteUrl = url.startsWith('http') ? url : new URL(url, base).toString();
+
+      // 3) payload (sanitizado)
+      const payload: any = { titulo: form.titulo.trim(), urlVideo: absoluteUrl };
+      if (form.descricao.trim()) payload.descricao = form.descricao.trim();
+
+      if (form.ordem) {
+        const n = Number(form.ordem);
+        if (Number.isFinite(n) && n > 0) payload.ordem = Math.trunc(n);
+      }
+      if (form.duracaoMin) {
+        const d = Number(form.duracaoMin);
+        if (Number.isFinite(d) && d > 0) payload.duracaoMin = Math.trunc(d);
+      }
+      if (form.moduloId) payload.moduloId = form.moduloId; // envia somente se escolhido
+
+      // 4) cria
+      await addVideoAula(cursoId, payload);
+
+      // limpa
+      setForm({ titulo: '', descricao: '', ordem: '', duracaoMin: '', file: null, moduloId: '' });
+      setProgress(0);
+
+      await qc.invalidateQueries({ queryKey: ['videoaulas', cursoId] });
+    } catch (e: any) {
+      const issues = e?.response?.data?.issues;
+      const zodMsg = Array.isArray(issues)
+        ? issues.map((i: any) => `${i.path?.join('.')}: ${i.message}`).join(' | ')
+        : (issues && typeof issues === 'object')
+          ? JSON.stringify(issues)
+          : null;
+
+      console.error(e?.response?.data ?? e);
+      setErr(zodMsg ?? e?.response?.data?.message ?? e?.message ?? 'Erro ao enviar/criar vídeo-aula');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function handleDelete(videoId: string) {
     if (!cursoId) return;
     if (!confirm('Excluir esta vídeo-aula?')) return;
-    await deleteVideoAula(cursoId, videoId);
-    await qc.invalidateQueries({ queryKey: ['videoaulas', { cursoId }] });
+    try {
+      await deleteVideoAula(cursoId, videoId);
+      await qc.invalidateQueries({ queryKey: ['videoaulas', cursoId] });
+    } catch (e: any) {
+      console.error(e?.response?.data ?? e);
+      setErr(e?.response?.data?.message ?? e?.message ?? 'Erro ao excluir vídeo-aula');
+    }
   }
 
   return (
     <div className="space-y-4">
+      {/* header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <h1 className="text-2xl font-semibold">Vídeo-aulas por Curso</h1>
         <div className="flex-1" />
@@ -109,13 +207,16 @@ export default function VideoAulasPage() {
             onFocus={() => cursosQuery.refetch()}
           >
             <option value="">Selecione um curso</option>
-            {cursosQuery.data?.data?.map((c: Curso) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
+            {(cursosQuery.data as Curso[] | undefined)?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
             ))}
           </select>
         </div>
       </div>
 
+      {/* form */}
       <Card>
         <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
@@ -125,6 +226,7 @@ export default function VideoAulasPage() {
               value={form.titulo}
               onChange={(e) => setForm({ ...form, titulo: e.target.value })}
               required
+              disabled={!cursoId}
             />
           </div>
 
@@ -135,10 +237,34 @@ export default function VideoAulasPage() {
               placeholder="Breve descrição"
               value={form.descricao}
               onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+              disabled={!cursoId}
             />
           </div>
 
-          <div className="md:col-span-2">
+          <div>
+            <div className="label">Módulo (opcional)</div>
+            <select
+              className="input"
+              value={form.moduloId}
+              onChange={(e) => setForm({ ...form, moduloId: e.target.value })}
+              disabled={!cursoId || modulosQuery.isFetching}
+            >
+              <option value="">Sem módulo</option>
+              {modulos.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.ordem ? `${m.ordem}. ` : ''}{m.nome}
+                </option>
+              ))}
+            </select>
+            {cursoId && modulosQuery.isFetching && (
+              <p className="text-xs text-[color:var(--text-muted)] mt-1">Carregando módulos…</p>
+            )}
+            {modulosQuery.error && (
+              <p className="text-xs text-red-600 mt-1">Erro ao carregar módulos.</p>
+            )}
+          </div>
+
+          <div>
             <div className="label">Arquivo de vídeo *</div>
             <input
               type="file"
@@ -146,6 +272,7 @@ export default function VideoAulasPage() {
               className="input"
               onChange={(e) => setForm({ ...form, file: e.target.files?.[0] ?? null })}
               required
+              disabled={!cursoId}
             />
             {progress > 0 && (
               <div className="mt-2 text-xs text-[color:var(--text-muted)]">
@@ -165,9 +292,11 @@ export default function VideoAulasPage() {
             <Input
               type="number"
               min={1}
+              step={1}
               placeholder="1"
               value={form.ordem}
               onChange={(e) => setForm({ ...form, ordem: e.target.value })}
+              disabled={!cursoId}
             />
           </div>
 
@@ -176,9 +305,11 @@ export default function VideoAulasPage() {
             <Input
               type="number"
               min={1}
+              step={1}
               placeholder="45"
               value={form.duracaoMin}
               onChange={(e) => setForm({ ...form, duracaoMin: e.target.value })}
+              disabled={!cursoId}
             />
           </div>
 
@@ -189,16 +320,17 @@ export default function VideoAulasPage() {
           )}
 
           <div className="md:col-span-2 flex items-center justify-end">
-            <Button disabled={creating}>
-              {creating ? 'Enviando…' : 'Salvar vídeo-aula'}
-            </Button>
+            <Button disabled={creating || !cursoId}>{creating ? 'Enviando…' : 'Salvar vídeo-aula'}</Button>
           </div>
         </form>
       </Card>
 
+      {/* lista agrupada por módulo */}
       <Card>
         {!cursoId ? (
-          <p className="text-[color:var(--text-muted)] mt-3">Selecione um curso para ver as vídeo-aulas.</p>
+          <p className="text-[color:var(--text-muted)] mt-3">
+            Selecione um curso para ver as vídeo-aulas.
+          </p>
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -208,44 +340,60 @@ export default function VideoAulasPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto mt-3">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[color:var(--text-muted)]">
-                    <th className="py-2">#</th>
-                    <th className="py-2">Título</th>
-                    <th className="py-2">Arquivo</th>
-                    <th className="py-2">Duração</th>
-                    <th className="py-2 w-16"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {videos
-                    .slice()
-                    .sort((a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || a.createdAt.localeCompare(b.createdAt))
-                    .map((v: VideoAula, idx: number) => (
-                      <tr key={v.id} className="border-t border-black/5">
-                        <td className="py-3">{v.ordem ?? idx + 1}</td>
-                        <td className="py-3">{v.titulo}</td>
-                        <td className="py-3 truncate max-w-[280px]">
-                          <a className="link" href={v.urlVideo} target="_blank" rel="noreferrer">
-                            {v.urlVideo.split('/').pop()}
-                          </a>
-                        </td>
-                        <td className="py-3">{v.duracaoMin ? `${v.duracaoMin} min` : '—'}</td>
-                        <td className="py-3">
-                          <button
-                            className="btn btn-ghost text-red-600"
-                            title="Excluir"
-                            onClick={() => handleDelete(v.id)}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            {grupos.length === 0 && !videosQuery.isFetching && (
+              <p className="text-[color:var(--text-muted)] mt-4">Nenhuma vídeo-aula.</p>
+            )}
+
+            <div className="mt-3 space-y-6">
+              {grupos.map((g) => (
+                <div key={g.key} className="rounded-lg border p-3">
+                  <div className="font-medium mb-2">
+                    {g.titulo} <span className="text-xs text-[color:var(--text-muted)]">({g.itens.length})</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[color:var(--text-muted)]">
+                          <th className="py-2 w-14">#</th>
+                          <th className="py-2">Título</th>
+                          <th className="py-2">Arquivo</th>
+                          <th className="py-2">Duração</th>
+                          <th className="py-2 w-16"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.itens.map((v: VideoAula, idx: number) => (
+                          <tr key={v.id} className="border-t border-black/5">
+                            <td className="py-3">{v.ordem ?? idx + 1}</td>
+                            <td className="py-3">{v.titulo}</td>
+                            <td className="py-3 truncate max-w-[280px]">
+                              <a className="link" href={v.urlVideo} target="_blank" rel="noreferrer">
+                                {(() => {
+                                  try {
+                                    return new URL(v.urlVideo).pathname.split('/').pop();
+                                  } catch {
+                                    return v.urlVideo.split('/').pop();
+                                  }
+                                })()}
+                              </a>
+                            </td>
+                            <td className="py-3">{v.duracaoMin ? `${v.duracaoMin} min` : '—'}</td>
+                            <td className="py-3">
+                              <button
+                                className="btn btn-ghost text-red-600"
+                                title="Excluir"
+                                onClick={() => handleDelete(v.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
           </>
         )}

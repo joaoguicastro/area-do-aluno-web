@@ -11,15 +11,29 @@ import { listMatriculasAtivasDoAluno, type Matricula } from '../../services/matr
 import { listVideoAulas } from '../../services/videoaulas';
 import { getCursoById } from '../../services/cursos';
 import { getCursoProgresso, type CursoProgresso } from '../../services/progresso';
+import { listInformativosAluno, type Informativo } from '../../services/informativos';
 
 function truncate(text: string | undefined, max = 120) {
   if (!text) return '';
   return text.length > max ? text.slice(0, max - 1) + '…' : text;
 }
+function fmtDate(iso?: string) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 type ProgressoResumo = { cursoId: string; progress: CursoProgresso | null };
 
-// Card do curso – usa progresso pré-carregado (sem outra chamada de progresso)
 function CursoCard({
   cursoId,
   status,
@@ -55,7 +69,7 @@ function CursoCard({
   const hasLast = !!progresso?.lastVideoAulaId;
 
   const go = () => {
-    onEnter?.(cursoId); // opcional: se quiser telemetria/analytics
+    onEnter?.(cursoId);
     navigate(`/aluno/cursos/${cursoId}`);
   };
 
@@ -106,7 +120,7 @@ export default function Home() {
   const alunoId = useAuth((s) => s.profile?.alunoId ?? null);
   const navigate = useNavigate();
 
-  // 1) Matrículas ativas (tipado)
+  // Matrículas
   const { data: matr, isFetching, error } = useQuery<Matricula[]>({
     queryKey: ['meus-cursos', alunoId],
     queryFn: () => listMatriculasAtivasDoAluno(alunoId as string),
@@ -116,7 +130,7 @@ export default function Home() {
 
   const cursoIds: string[] = useMemo(() => (matr ?? []).map((m) => m.cursoId), [matr]);
 
-  // 2) Uma ÚNICA query que busca progresso de todos os cursos (Promise.all)
+  // Progresso (todos os cursos do aluno)
   const progResumoQ = useQuery<ProgressoResumo[]>({
     queryKey: ['progresso-resumo', ...cursoIds],
     enabled: !!alunoId && cursoIds.length > 0,
@@ -136,11 +150,18 @@ export default function Home() {
     },
   });
 
-  // 3) Decide o "Continuar" via maior updatedAt do servidor
+  // Informativos do aluno
+  const infosQ = useQuery<{ data: Informativo[] }>({
+    queryKey: ['informativos-aluno'],
+    queryFn: () => listInformativosAluno({ perPage: 5 }),
+    enabled: !!alunoId,
+    staleTime: 1000 * 60,
+  });
+  const informativos = infosQ.data?.data ?? [];
+
+  // "Continuar"
   const continuarId: string | null = useMemo(() => {
-    if (!progResumoQ.data || progResumoQ.data.length === 0) {
-      return cursoIds[0] ?? null;
-    }
+    if (!progResumoQ.data || progResumoQ.data.length === 0) return cursoIds[0] ?? null;
     let bestId: string | null = null;
     let bestTs = -1;
     for (const item of progResumoQ.data) {
@@ -153,7 +174,6 @@ export default function Home() {
     return bestId ?? (cursoIds[0] ?? null);
   }, [progResumoQ.data, cursoIds]);
 
-  // Dados do "Continuar"
   const contCursoQ = useQuery({
     queryKey: ['curso', continuarId],
     queryFn: () => getCursoById(continuarId as string),
@@ -171,9 +191,8 @@ export default function Home() {
   const contDesc = contVideosQ.data?.data?.[0]?.descricao ?? '';
 
   useEffect(() => {
-    // Prefetch do player do curso atual (opcional)
     if (continuarId) {
-      // nada obrigatório aqui; só um lugar para evoluir depois
+      // prefetch opcional
     }
   }, [continuarId]);
 
@@ -187,9 +206,7 @@ export default function Home() {
     );
   }
 
-  if (error) {
-    return <p className="text-red-600">Erro ao carregar seus cursos.</p>;
-  }
+  if (error) return <p className="text-red-600">Erro ao carregar seus cursos.</p>;
 
   return (
     <div className="space-y-6">
@@ -231,7 +248,23 @@ export default function Home() {
         <Card className="p-4">
           <div className="font-semibold">Informativos</div>
           <div className="mt-2 space-y-2">
-            <p className="text-sm text-[color:var(--text-muted)]">Sem informativos no momento.</p>
+            {infosQ.isFetching && informativos.length === 0 && (
+              <p className="text-sm text-[color:var(--text-muted)]">Carregando…</p>
+            )}
+
+            {informativos.length === 0 && !infosQ.isFetching && (
+              <p className="text-sm text-[color:var(--text-muted)]">Sem informativos no momento.</p>
+            )}
+
+            {informativos.slice(0, 3).map((i) => (
+              <div key={i.id} className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition">
+                <div className="text-sm font-medium truncate">{i.titulo}</div>
+                <div className="text-xs text-[color:var(--text-muted)]">{fmtDate(i.createdAt)}</div>
+                <p className="text-sm text-[color:var(--text-muted)] mt-1">
+                  {truncate((i as any).mensagem ?? (i as any).message ?? '', 140)}
+                </p>
+              </div>
+            ))}
           </div>
         </Card>
       </div>

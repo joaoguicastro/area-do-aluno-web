@@ -18,6 +18,8 @@ import ProvasList from './screens/admin/provas/ProvasList.tsx';
 import VideoAulasPage from './screens/admin/cursos/VideoAulasPage.tsx';
 import CursoPlayer from './screens/aluno/cursos/CursoPlayer.tsx';
 import FuncionariosPage from './screens/admin/funcionarios/FuncionariosPage.tsx';
+import InformativosPage from './screens/admin/informativos/InformativosPage.tsx';
+import ModulosPage from './screens/admin/cursos/ModulosPage.tsx';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -42,6 +44,8 @@ export const router = createBrowserRouter([
               { path: 'provas', element: <ProvasList /> },
               { path: 'videoaulas', element: <VideoAulasPage /> },
               { path: 'funcionarios', element: <FuncionariosPage /> },
+              { path: 'informativos', element: <InformativosPage /> },
+              { path: 'modulos', element: <ModulosPage /> },
             ],
           },
         ],

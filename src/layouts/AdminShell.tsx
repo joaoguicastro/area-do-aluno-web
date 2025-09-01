@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NavLink, Outlet } from 'react-router-dom';
+import { Megaphone } from 'lucide-react';
 import {
   GraduationCap,
   Layers,
@@ -39,6 +40,8 @@ export default function AdminShell() {
     ...(role === 'MASTER'
       ? [{ to: '/admin/funcionarios', label: 'Funcionários', icon: Users } as LinkItem]
       : []),
+    { to: '/admin/informativos', label: 'Informativos', icon: Megaphone },
+    { to: '/admin/modulos', label: 'Módulos', icon: Layers }
   ];
 
   return (

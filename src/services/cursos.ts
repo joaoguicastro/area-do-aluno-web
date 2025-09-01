@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { api } from '../lib/api';
 
 export type Curso = {
@@ -16,7 +17,10 @@ export type ListResponse<T> = {
 };
 
 export async function listCursos(params: { q?: string; page?: number; perPage?: number } = {}) {
-  const { data } = await api.get<ListResponse<Curso>>('/cursos', { params });
+  const { page = 1, perPage = 10, ...rest } = params;
+  const { data } = await api.get<ListResponse<Curso>>('/cursos', {
+    params: { page, perPage, ...rest },
+  });
   return data;
 }
 
@@ -35,6 +39,6 @@ export async function deleteCurso(id: string) {
 }
 
 export async function getCursoById(id: string): Promise<Curso> {
-  const res = await api.get(`/cursos/${id}`);
-  return res.data?.curso ?? res.data;
+  const { data } = await api.get<{ curso: Curso } | Curso>(`/cursos/${id}`);
+  return (data as any).curso ?? (data as any);
 }
