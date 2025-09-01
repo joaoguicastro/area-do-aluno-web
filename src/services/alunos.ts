@@ -52,9 +52,14 @@ export async function listAlunos(params: { q?: string; page?: number; perPage?: 
 }
 
 export async function createAluno(payload: CreateAlunoPayload) {
-  const { data } = await api.post<{ aluno: Aluno }>('/alunos', payload);
-  return data.aluno;
+  // remove null/undefined/'' para bater com zod .optional()
+  const body = Object.fromEntries(
+    Object.entries(payload).filter(([, v]) => v !== null && v !== undefined && v !== '')
+  );
+  const { data } = await api.post<{ aluno: Aluno } | Aluno>('/alunos', body);
+  return (data as any).aluno ?? data;
 }
+
 
 export type UpdateAlunoPayload = Partial<Omit<CreateAlunoPayload, 'senha' | 'prefixoMatricula'>>;
 export async function updateAluno(id: string, payload: UpdateAlunoPayload) {

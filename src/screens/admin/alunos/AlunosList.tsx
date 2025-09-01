@@ -88,54 +88,60 @@ export default function AlunosList() {
   });
 
   async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    setErr(null);
-    try {
-      const payload: CreateAlunoPayload = {
-        nome: form.nome.trim(),
-        cpfAluno: onlyDigits(form.cpfAluno),
-        dataNascimentoAluno: brToISO(form.dataNascimentoAluno) ?? '',
-        nomeResponsavel: form.nomeResponsavel.trim(),
-        cpfResponsavel: onlyDigits(form.cpfResponsavel),
-        dataNascimentoResponsavel: brToISO(form.dataNascimentoResponsavel) ?? '',
-        rua: form.rua.trim(),
-        numero: form.numero.trim(),
-        bairro: form.bairro.trim(),
-        cidade: form.cidade.trim(),
-        telefone: form.telefone ? form.telefone.trim() : null,
-        email: form.email ? form.email.trim() : null,
-        fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : null,
-        senha: form.senha,
-        prefixoMatricula: form.prefixoMatricula || 'INF',
-      };
+  e.preventDefault();
+  setCreating(true);
+  setErr(null);
+  try {
+    const payload: CreateAlunoPayload = {
+      nome: form.nome.trim(),
+      cpfAluno: onlyDigits(form.cpfAluno),
+      dataNascimentoAluno: brToISO(form.dataNascimentoAluno) ?? '',
+      nomeResponsavel: form.nomeResponsavel.trim(),
+      cpfResponsavel: onlyDigits(form.cpfResponsavel),
+      dataNascimentoResponsavel: brToISO(form.dataNascimentoResponsavel) ?? '',
+      rua: form.rua.trim(),
+      numero: form.numero.trim(),
+      bairro: form.bairro.trim(),
+      cidade: form.cidade.trim(),
+      // NÃO envie null — deixe undefined/omita
+      telefone: form.telefone ? form.telefone.trim() : undefined,
+      email: form.email ? form.email.trim() : undefined,
+      fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : undefined,
+      senha: form.senha,
+      prefixoMatricula: form.prefixoMatricula || 'INF',
+    };
 
-      await createAluno(payload);
-      setOpen(false);
-      setForm({
-        nome: '',
-        cpfAluno: '',
-        dataNascimentoAluno: '',
-        nomeResponsavel: '',
-        cpfResponsavel: '',
-        dataNascimentoResponsavel: '',
-        rua: '',
-        numero: '',
-        bairro: '',
-        cidade: '',
-        telefone: '',
-        email: '',
-        fotoUrl: '',
-        senha: '',
-        prefixoMatricula: 'INF',
-      });
-      await qc.invalidateQueries({ queryKey: ['alunos'] });
-    } catch (e: any) {
-      setErr(e?.response?.data?.message ?? 'Erro ao criar aluno');
-    } finally {
-      setCreating(false);
-    }
+    // remove chaves vazias/null/undefined
+    const body = Object.fromEntries(
+      Object.entries(payload).filter(([, v]) => v !== null && v !== undefined && v !== '')
+    ) as CreateAlunoPayload;
+
+    await createAluno(body);
+    setOpen(false);
+    setForm({
+      nome: '',
+      cpfAluno: '',
+      dataNascimentoAluno: '',
+      nomeResponsavel: '',
+      cpfResponsavel: '',
+      dataNascimentoResponsavel: '',
+      rua: '',
+      numero: '',
+      bairro: '',
+      cidade: '',
+      telefone: '',
+      email: '',
+      fotoUrl: '',
+      senha: '',
+      prefixoMatricula: 'INF',
+    });
+    await qc.invalidateQueries({ queryKey: ['alunos'] });
+  } catch (e: any) {
+    setErr(e?.response?.data?.message ?? 'Erro ao criar aluno');
+  } finally {
+    setCreating(false);
   }
+}
 
   async function handleDelete(id: string) {
     if (!confirm('Excluir este aluno?')) return;
