@@ -8,7 +8,7 @@ import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 
 import { listMatriculasAtivasDoAluno, type Matricula } from '../../services/matriculas';
-import { listVideoAulas } from '../../services/videoaulas';
+import { listVideoAulas, type VideoAula } from '../../services/videoaulas';
 import { getCursoById } from '../../services/cursos';
 import { getCursoProgresso, type CursoProgresso } from '../../services/progresso';
 import { listInformativosAluno, type Informativo } from '../../services/informativos';
@@ -54,7 +54,8 @@ function CursoCard({
     staleTime: 1000 * 60 * 5,
   });
 
-  const videosQ = useQuery({
+  // AGORA: tipa como VideoAula[] e não usa `.data`
+  const videosQ = useQuery<VideoAula[]>({
     queryKey: ['videoaulas', { cursoId }],
     queryFn: () => listVideoAulas(cursoId),
     enabled: !!cursoId,
@@ -62,8 +63,8 @@ function CursoCard({
   });
 
   const nome = cursoQ.data?.nome ?? 'Curso';
-  const desc = videosQ.data?.data?.[0]?.descricao ?? '';
-  const total = progresso?.total ?? videosQ.data?.data?.length ?? 0;
+  const desc = videosQ.data?.[0]?.descricao ?? '';
+  const total = progresso?.total ?? (videosQ.data?.length ?? 0);
   const feitos = progresso?.feitos ?? 0;
   const pct = total ? Math.round((feitos / total) * 100) : 0;
   const hasLast = !!progresso?.lastVideoAulaId;
@@ -80,7 +81,7 @@ function CursoCard({
         tabIndex={0}
         onClick={go}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ' ? go() : undefined)}
-        className="p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition rounded-lg"
+        className="p-4 cursor-pointer hover:bg-black/5 dark:hover:bg:white/5 transition rounded-lg"
         title="Acessar curso"
       >
         <div className="flex items-start justify-between gap-2">
@@ -180,7 +181,9 @@ export default function Home() {
     enabled: !!continuarId,
     staleTime: 1000 * 60 * 5,
   });
-  const contVideosQ = useQuery({
+
+  // AGORA: tipa como VideoAula[] e usa direto o array
+  const contVideosQ = useQuery<VideoAula[]>({
     queryKey: ['videoaulas', { cursoId: continuarId, preview: true }],
     queryFn: () => listVideoAulas(continuarId as string),
     enabled: !!continuarId,
@@ -188,7 +191,7 @@ export default function Home() {
   });
 
   const contNome = contCursoQ.data?.nome;
-  const contDesc = contVideosQ.data?.data?.[0]?.descricao ?? '';
+  const contDesc = contVideosQ.data?.[0]?.descricao ?? '';
 
   useEffect(() => {
     if (continuarId) {

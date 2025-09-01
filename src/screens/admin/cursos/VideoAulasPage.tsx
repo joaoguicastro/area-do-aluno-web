@@ -16,8 +16,16 @@ import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
 import { Input } from '../../../ui/Input';
 import { Textarea } from '../../../ui/Textarea';
-import { Trash2 } from 'lucide-react';
+import { Trash2, CalendarDays } from 'lucide-react';
 import { api } from '../../../lib/api';
+
+function formatDateBR(value?: string | null) {
+  if (!value) return '—';
+  const iso = value.length === 10 ? `${value}T00:00:00` : value;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('pt-BR');
+}
 
 export default function VideoAulasPage() {
   const qc = useQueryClient();
@@ -33,7 +41,8 @@ export default function VideoAulasPage() {
     ordem: string;
     duracaoMin: string;
     file: File | null;
-    moduloId: string; // opcional
+    moduloId: string;
+    liberarEm: string; // YYYY-MM-DD (opcional)
   }>({
     titulo: '',
     descricao: '',
@@ -41,20 +50,29 @@ export default function VideoAulasPage() {
     duracaoMin: '',
     file: null,
     moduloId: '',
+    liberarEm: '',
   });
 
-  // === Cursos para o select
+  // cursos p/ select (sem page/perPage)
   const cursosQuery = useQuery({
     queryKey: ['cursos-for-select'],
     queryFn: async () => {
-      const res: any = await listCursos();
-      return Array.isArray(res) ? (res as Curso[]) : ((res?.data ?? []) as Curso[]);
+      const res: any = await listCursos(); // sem params (evita 400)
+      return res;
     },
     staleTime: 1000 * 60 * 5,
     retry: false,
   });
 
-  // === Módulos do curso selecionado
+  // >>> garante sempre um array aqui
+  const cursos = useMemo(() => {
+    const r: any = cursosQuery.data;
+    if (Array.isArray(r)) return r as Curso[];
+    if (Array.isArray(r?.data)) return r.data as Curso[];
+    return [] as Curso[];
+  }, [cursosQuery.data]);
+
+  // módulos do curso
   const modulosQuery = useQuery({
     queryKey: ['modulos', cursoId],
     queryFn: async () => {
@@ -66,14 +84,9 @@ export default function VideoAulasPage() {
     staleTime: 1000 * 30,
     retry: false,
   });
+  const modulos = useMemo(() => (modulosQuery.data ?? []) as Modulo[], [modulosQuery.data]);
 
-  // memo p/ satisfazer exhaustive-deps
-  const modulos = useMemo(
-    () => ((modulosQuery.data ?? []) as Modulo[]),
-    [modulosQuery.data]
-  );
-
-  // === Vídeo-aulas do curso (array direto)
+  // vídeo-aulas do curso (AGORA já vem como array)
   const videosQuery = useQuery<VideoAula[]>({
     queryKey: ['videoaulas', cursoId],
     queryFn: () => listVideoAulas(cursoId),
@@ -81,51 +94,41 @@ export default function VideoAulasPage() {
     staleTime: 1000 * 30,
     retry: false,
   });
+  const videos = useMemo(() => (videosQuery.data ?? []) as VideoAula[], [videosQuery.data]);
 
-  // memo p/ satisfazer exhaustive-deps + tipar length
-  const videos = useMemo(
-    () => ((videosQuery.data ?? []) as VideoAula[]),
-    [videosQuery.data]
-  );
-
-  // === Agrupamento por módulo (inclui "Sem módulo")
+  // agrupamento por módulo (inclui "Sem módulo")
   const grupos = useMemo(() => {
     type Grupo = { key: string; titulo: string; ordem: number | null; itens: VideoAula[] };
     const by: Record<string, Grupo> = {};
 
-    // cria grupos para cada módulo
     for (const md of modulos) {
-      const key = md.id;
-      by[key] = by[key] ?? {
-        key,
+      by[md.id] = {
+        key: md.id,
         titulo: `${md.ordem ? md.ordem + '. ' : ''}${md.nome}`,
         ordem: md.ordem ?? null,
         itens: [],
       };
     }
-    // grupo "Sem módulo"
-    by['__SEM__'] = by['__SEM__'] ?? { key: '__SEM__', titulo: 'Sem módulo', ordem: 9_999_999, itens: [] };
+    by['__SEM__'] = { key: '__SEM__', titulo: 'Sem módulo', ordem: 9_999_999, itens: [] };
 
-    // distribui vídeos
     for (const v of videos) {
       const key = (v as any).moduloId || '__SEM__';
       (by[key] ?? by['__SEM__']).itens.push(v);
     }
 
-    // ordena vídeos dentro do grupo
     for (const g of Object.values(by)) {
       g.itens.sort(
-        (a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+        (a, b) =>
+          (a.ordem ?? 1e9) - (b.ordem ?? 1e9) ||
+          (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
       );
     }
 
-    // retorna em ordem de módulo e esconde grupos vazios
     return Object.values(by)
       .filter((g) => g.itens.length > 0)
       .sort((a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || a.titulo.localeCompare(b.titulo));
   }, [videos, modulos]);
 
-  // === Handlers
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!cursoId) return setErr('Selecione um curso.');
@@ -137,32 +140,28 @@ export default function VideoAulasPage() {
     setProgress(0);
 
     try {
-      // 1) upload
       const { url } = await uploadVideo(form.file, (p) => setProgress(p));
-
-      // 2) garantir URL absoluta
       const base = (api as any)?.defaults?.baseURL || window.location.origin;
       const absoluteUrl = url.startsWith('http') ? url : new URL(url, base).toString();
 
-      // 3) payload (sanitizado)
       const payload: any = { titulo: form.titulo.trim(), urlVideo: absoluteUrl };
       if (form.descricao.trim()) payload.descricao = form.descricao.trim();
+      if (form.ordem) payload.ordem = Number(form.ordem);
+      if (form.duracaoMin) payload.duracaoMin = Number(form.duracaoMin);
+      if (form.moduloId) payload.moduloId = form.moduloId;
+      if (form.liberarEm) payload.liberarEm = form.liberarEm; // YYYY-MM-DD
 
-      if (form.ordem) {
-        const n = Number(form.ordem);
-        if (Number.isFinite(n) && n > 0) payload.ordem = Math.trunc(n);
-      }
-      if (form.duracaoMin) {
-        const d = Number(form.duracaoMin);
-        if (Number.isFinite(d) && d > 0) payload.duracaoMin = Math.trunc(d);
-      }
-      if (form.moduloId) payload.moduloId = form.moduloId; // envia somente se escolhido
-
-      // 4) cria
       await addVideoAula(cursoId, payload);
 
-      // limpa
-      setForm({ titulo: '', descricao: '', ordem: '', duracaoMin: '', file: null, moduloId: '' });
+      setForm({
+        titulo: '',
+        descricao: '',
+        ordem: '',
+        duracaoMin: '',
+        file: null,
+        moduloId: '',
+        liberarEm: '',
+      });
       setProgress(0);
 
       await qc.invalidateQueries({ queryKey: ['videoaulas', cursoId] });
@@ -173,7 +172,6 @@ export default function VideoAulasPage() {
         : (issues && typeof issues === 'object')
           ? JSON.stringify(issues)
           : null;
-
       console.error(e?.response?.data ?? e);
       setErr(zodMsg ?? e?.response?.data?.message ?? e?.message ?? 'Erro ao enviar/criar vídeo-aula');
     } finally {
@@ -193,9 +191,10 @@ export default function VideoAulasPage() {
     }
   }
 
+  const today = new Date();
+
   return (
     <div className="space-y-4">
-      {/* header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <h1 className="text-2xl font-semibold">Vídeo-aulas por Curso</h1>
         <div className="flex-1" />
@@ -207,16 +206,13 @@ export default function VideoAulasPage() {
             onFocus={() => cursosQuery.refetch()}
           >
             <option value="">Selecione um curso</option>
-            {(cursosQuery.data as Curso[] | undefined)?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
+            {cursos.map((c) => (
+              <option key={c.id} value={c.id}>{c.nome}</option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* form */}
       <Card>
         <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
@@ -259,9 +255,7 @@ export default function VideoAulasPage() {
             {cursoId && modulosQuery.isFetching && (
               <p className="text-xs text-[color:var(--text-muted)] mt-1">Carregando módulos…</p>
             )}
-            {modulosQuery.error && (
-              <p className="text-xs text-red-600 mt-1">Erro ao carregar módulos.</p>
-            )}
+            {modulosQuery.error && <p className="text-xs text-red-600 mt-1">Erro ao carregar módulos.</p>}
           </div>
 
           <div>
@@ -278,10 +272,7 @@ export default function VideoAulasPage() {
               <div className="mt-2 text-xs text-[color:var(--text-muted)]">
                 Enviando: {progress}%
                 <div className="h-2 bg-black/10 dark:bg-white/10 rounded mt-1">
-                  <div
-                    className="h-2 bg-[var(--brand-primary)] rounded"
-                    style={{ width: `${progress}%` }}
-                  />
+                  <div className="h-2 bg-[var(--brand-primary)] rounded" style={{ width: `${progress}%` }} />
                 </div>
               </div>
             )}
@@ -313,11 +304,21 @@ export default function VideoAulasPage() {
             />
           </div>
 
-          {err && (
-            <div className="md:col-span-2">
-              <p className="text-red-600 text-sm">{err}</p>
-            </div>
-          )}
+          {/* NOVO: liberar em */}
+          <div>
+            <div className="label">Liberar em (opcional)</div>
+            <Input
+              type="date"
+              value={form.liberarEm}
+              onChange={(e) => setForm({ ...form, liberarEm: e.target.value })}
+              disabled={!cursoId}
+            />
+            <p className="text-[11px] text-[color:var(--text-muted)] mt-1 flex items-center gap-1">
+              <CalendarDays size={12} /> Se vazio, libera imediatamente.
+            </p>
+          </div>
+
+          {err && <div className="md:col-span-2"><p className="text-red-600 text-sm">{err}</p></div>}
 
           <div className="md:col-span-2 flex items-center justify-end">
             <Button disabled={creating || !cursoId}>{creating ? 'Enviando…' : 'Salvar vídeo-aula'}</Button>
@@ -325,12 +326,9 @@ export default function VideoAulasPage() {
         </form>
       </Card>
 
-      {/* lista agrupada por módulo */}
       <Card>
         {!cursoId ? (
-          <p className="text-[color:var(--text-muted)] mt-3">
-            Selecione um curso para ver as vídeo-aulas.
-          </p>
+          <p className="text-[color:var(--text-muted)] mt-3">Selecione um curso para ver as vídeo-aulas.</p>
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -340,7 +338,13 @@ export default function VideoAulasPage() {
               </div>
             </div>
 
-            {grupos.length === 0 && !videosQuery.isFetching && (
+            {videosQuery.error && (
+              <p className="text-red-600 text-sm mt-2">
+                Erro ao carregar vídeo-aulas. Veja o console/network para detalhes.
+              </p>
+            )}
+
+            {grupos.length === 0 && !videosQuery.isFetching && !videosQuery.error && (
               <p className="text-[color:var(--text-muted)] mt-4">Nenhuma vídeo-aula.</p>
             )}
 
@@ -358,37 +362,49 @@ export default function VideoAulasPage() {
                           <th className="py-2">Título</th>
                           <th className="py-2">Arquivo</th>
                           <th className="py-2">Duração</th>
-                          <th className="py-2 w-16"></th>
+                          <th className="py-2">Libera em</th> {/* NOVO */}
+                          <th className="py-2 w-16" />
                         </tr>
                       </thead>
                       <tbody>
-                        {g.itens.map((v: VideoAula, idx: number) => (
-                          <tr key={v.id} className="border-t border-black/5">
-                            <td className="py-3">{v.ordem ?? idx + 1}</td>
-                            <td className="py-3">{v.titulo}</td>
-                            <td className="py-3 truncate max-w-[280px]">
-                              <a className="link" href={v.urlVideo} target="_blank" rel="noreferrer">
-                                {(() => {
-                                  try {
-                                    return new URL(v.urlVideo).pathname.split('/').pop();
-                                  } catch {
-                                    return v.urlVideo.split('/').pop();
-                                  }
-                                })()}
-                              </a>
-                            </td>
-                            <td className="py-3">{v.duracaoMin ? `${v.duracaoMin} min` : '—'}</td>
-                            <td className="py-3">
-                              <button
-                                className="btn btn-ghost text-red-600"
-                                title="Excluir"
-                                onClick={() => handleDelete(v.id)}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {g.itens.map((v, idx) => {
+                          const libera = (v as any).liberarEm as string | undefined;
+                          const isAgendada =
+                            !!libera && new Date(libera.length === 10 ? `${libera}T00:00:00` : libera) > today;
+                          return (
+                            <tr key={v.id} className="border-t border-black/5">
+                              <td className="py-3">{v.ordem ?? idx + 1}</td>
+                              <td className="py-3">{v.titulo}</td>
+                              <td className="py-3 truncate max-w-[280px]">
+                                <a className="link" href={v.urlVideo} target="_blank" rel="noreferrer">
+                                  {(() => {
+                                    try { return new URL(v.urlVideo).pathname.split('/').pop(); }
+                                    catch { return v.urlVideo.split('/').pop(); }
+                                  })()}
+                                </a>
+                              </td>
+                              <td className="py-3">{v.duracaoMin ? `${v.duracaoMin} min` : '—'}</td>
+                              <td className="py-3">
+                                {libera ? (
+                                  <span className={isAgendada ? 'text-amber-600' : ''}>
+                                    {formatDateBR(libera)} {isAgendada ? '• agendada' : ''}
+                                  </span>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className="py-3">
+                                <button
+                                  className="btn btn-ghost text-red-600"
+                                  title="Excluir"
+                                  onClick={() => handleDelete(v.id)}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

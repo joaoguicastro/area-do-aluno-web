@@ -10,57 +10,68 @@ export type VideoAula = {
   urlVideo: string;
   ordem?: number | null;
   duracaoMin?: number | null;
-  createdAt: string;
+  createdAt: string;           // ISO
+  liberarEm?: string | null;   // ISO ou null
 };
 
 export type CreateVideoAulaPayload = {
   titulo: string;
   urlVideo: string;
-  descricao?: string;
-  ordem?: number;
-  duracaoMin?: number;
-  moduloId?: string | null; // opcional
+  descricao?: string | null;
+  ordem?: number | null;
+  duracaoMin?: number | null;
+  moduloId?: string | null;
+  liberarEm?: string | null | Date; // aceita 'YYYY-MM-DD', ISO ou Date
 };
 
-// helper: extrai lista tolerando vários formatos
-function toArray<T = any>(raw: any): T[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw as T[];
-  if (Array.isArray(raw?.data)) return raw.data as T[];
-  if (Array.isArray(raw?.items)) return raw.items as T[];
-  if (Array.isArray(raw?.rows)) return raw.rows as T[];
-  return [];
+// ----- helpers -----
+function normalizeVideoAula(raw: any): VideoAula {
+  return {
+    id: raw.id,
+    cursoId: raw.cursoId,
+    moduloId: raw.moduloId ?? null,
+    titulo: raw.titulo,
+    descricao: raw.descricao ?? null,
+    urlVideo: raw.urlVideo,
+    ordem: raw.ordem ?? null,
+    duracaoMin: raw.duracaoMin ?? null,
+    createdAt: String(raw.createdAt ?? ''),
+    liberarEm: raw.liberarEm ? String(raw.liberarEm) : null,
+  };
 }
 
-// GET /cursos/:cursoId/videoaulas
+function normalizeLiberarEm(v: string | null | Date | undefined) {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString();
+  // se vier 'YYYY-MM-DD', fixa 00:00:00 local
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00:00`;
+  return v; // já é ISO
+}
+
+// ----- API -----
 export async function listVideoAulas(cursoId: string): Promise<VideoAula[]> {
   const { data } = await api.get(`/cursos/${cursoId}/videoaulas`);
-  return toArray<VideoAula>(data);
+  const arr = Array.isArray(data) ? data : (data?.data ?? data?.videos ?? []);
+  return (arr as any[]).map(normalizeVideoAula);
 }
 
-// POST /cursos/:cursoId/videoaulas
 export async function addVideoAula(cursoId: string, payload: CreateVideoAulaPayload) {
   const body: any = {
-    titulo: (payload.titulo ?? '').trim(),
+    titulo: payload.titulo.trim(),
     urlVideo: payload.urlVideo,
   };
-  if (payload.descricao) body.descricao = payload.descricao.trim();
+  if (payload.descricao != null && payload.descricao !== '') body.descricao = payload.descricao;
+  if (payload.ordem != null) body.ordem = Number(payload.ordem);
+  if (payload.duracaoMin != null) body.duracaoMin = Number(payload.duracaoMin);
+  if (payload.moduloId != null && payload.moduloId !== '') body.moduloId = payload.moduloId;
+  if (payload.liberarEm !== undefined) body.liberarEm = normalizeLiberarEm(payload.liberarEm);
 
-  const nOrd = Number(payload.ordem);
-  if (Number.isFinite(nOrd) && nOrd > 0) body.ordem = Math.trunc(nOrd);
-
-  const nDur = Number(payload.duracaoMin);
-  if (Number.isFinite(nDur) && nDur > 0) body.duracaoMin = Math.trunc(nDur);
-
-  if (payload.moduloId) body.moduloId = payload.moduloId; // envia apenas se escolhido
-
-  const { data } = await api.post(`/cursos/${cursoId}/videoaulas`, body, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return (data?.videoaula ?? data?.data ?? data) as VideoAula;
+  const { data } = await api.post(`/cursos/${cursoId}/videoaulas`, body);
+  // back pode devolver { video: {...} } ou o objeto direto
+  const raw = (data?.video ?? data) as any;
+  return normalizeVideoAula(raw);
 }
 
-// DELETE /cursos/:cursoId/videoaulas/:id
 export async function deleteVideoAula(cursoId: string, id: string) {
   await api.delete(`/cursos/${cursoId}/videoaulas/${id}`);
 }

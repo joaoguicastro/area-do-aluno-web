@@ -1,6 +1,6 @@
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
-import { useAuth } from '../auth/store';
+import { Button } from '../../ui/Button';
+import { Card } from '../../ui/Card';
+import { useAuth } from '../../auth/store';
 import { GraduationCap, Layers, Users, ClipboardList, FileText, ListChecks } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

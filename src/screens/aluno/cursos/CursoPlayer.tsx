@@ -6,9 +6,30 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { listVideoAulas, type VideoAula } from '../../../services/videoaulas';
 import { getCursoProgresso, patchProgresso } from '../../../services/progresso';
+import { listModulos, type Modulo } from '../../../services/modulos';
 import { Card } from '../../../ui/Card';
 import { Button } from '../../../ui/Button';
-import { CheckCircle2, PlayCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle2, PlayCircle, ChevronLeft, ChevronRight, Lock, Calendar as CalendarIcon } from 'lucide-react';
+
+function parseLiberarEm(dateStr?: string | null): Date | null {
+  if (!dateStr) return null;
+  const iso = dateStr.length === 10 ? `${dateStr}T00:00:00` : dateStr;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isLocked(v: Pick<VideoAula, 'liberarEm'>, now = new Date()): boolean {
+  const d = parseLiberarEm(v.liberarEm);
+  return d ? d.getTime() > now.getTime() : false;
+}
+
+function formatDateBR(value?: string | null) {
+  if (!value) return '—';
+  const iso = value.length === 10 ? `${value}T00:00:00` : value;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('pt-BR');
+}
 
 export default function CursoPlayer() {
   const { cursoId = '' } = useParams();
@@ -19,27 +40,68 @@ export default function CursoPlayer() {
   const lastSentRef = useRef<number>(0);
 
   // ===== QUERIES =====
-  const aulasQ = useQuery({
-    queryKey: ['videoaulas', { cursoId }],
-    queryFn: () => listVideoAulas(cursoId),
-    enabled: !!cursoId,
-    staleTime: 1000 * 30,
+  const aulasQ = useQuery<VideoAula[]>({
+  queryKey: ['videoaulas', cursoId],
+  queryFn: () => listVideoAulas(cursoId),
+  enabled: !!cursoId,
   });
+  const ordered = useMemo(() => (aulasQ.data ?? []).slice().sort(
+    (a, b) =>
+      (a.ordem ?? 1e9) - (b.ordem ?? 1e9) ||
+      (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+  ), [aulasQ.data]);
+
 
   const progQ = useQuery({
     queryKey: ['progresso', { cursoId }],
     queryFn: () => getCursoProgresso(cursoId),
     enabled: !!cursoId,
-    staleTime: 1000 * 15,
+    staleTime: 15_000,
+  });
+
+  // módulos do curso (normalizando {data:[...]} ou [...])
+  const modulosQ = useQuery<Modulo[]>({
+    queryKey: ['modulos', cursoId],
+    queryFn: async () => {
+      const raw = await listModulos(cursoId);
+      const list = (raw as any)?.data ?? raw;
+      return Array.isArray(list) ? (list as Modulo[]) : [];
+    },
+    enabled: !!cursoId,
+    staleTime: 30_000,
   });
 
   // Ordenação estável: ordem (nulls por último), depois createdAt
-  const ordered: VideoAula[] = useMemo(() => {
-    const list = aulasQ.data?.data ?? [];
-    return list
+
+  // Ordena módulos por ordem (nulos por último) e nome
+  const modulesSorted = useMemo(() => {
+    const ms = modulosQ.data ?? [];
+    return ms
       .slice()
-      .sort((a, b) => (a.ordem ?? 1e9) - (b.ordem ?? 1e9) || a.createdAt.localeCompare(b.createdAt));
-  }, [aulasQ.data]);
+      .sort(
+        (a, b) =>
+          (a.ordem ?? 1e9) - (b.ordem ?? 1e9) ||
+          a.nome.localeCompare(b.nome)
+      );
+  }, [modulosQ.data]);
+
+  // Agrupa aulas por módulo + mantém "Sem módulo"
+  const grouped = useMemo(() => {
+    const by: Record<string, VideoAula[]> = {};
+    modulesSorted.forEach((m) => (by[m.id] = []));
+    const noModule: VideoAula[] = [];
+
+    ordered.forEach((v) => {
+      const moduloId = (v as any).moduloId ?? null;
+      if (moduloId && by[moduloId]) {
+        by[moduloId].push(v);
+      } else {
+        noModule.push(v);
+      }
+    });
+
+    return { by, noModule };
+  }, [ordered, modulesSorted]);
 
   // ===== ESTADO LOCAL =====
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -47,38 +109,48 @@ export default function CursoPlayer() {
   const [positions, setPositions] = useState<Record<string, number>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Seleciona a primeira aula assim que chegarem as aulas (fallback)
+  // Troca de curso => reseta estado local
   useEffect(() => {
-    if (!currentId && ordered.length > 0) {
-      setCurrentId(ordered[0].id);
-    }
-  }, [ordered, currentId]);
+    setCurrentId(null);
+    setDoneMap({});
+    setPositions({});
+    lastSentRef.current = 0;
+  }, [cursoId]);
 
-  // Aplica progresso do servidor SEM perder o que já marcamos localmente.
+  // Seleciona aula inicial assim que chegarem aulas/progresso
   useEffect(() => {
     const p = progQ.data;
-    if (!p) return;
-
-    setDoneMap((prev) => {
-      const merged = { ...prev };
-      (p.doneIds ?? []).forEach((id) => (merged[id] = true));
-      return merged;
-    });
-
-    setPositions((prev) => ({ ...prev, ...(p.positions ?? {}) }));
-
-    // Se o servidor conhece a última aula visitada e ainda não temos atual selecionada
-    if (p.lastVideoAulaId && !currentId) {
-      setCurrentId(p.lastVideoAulaId);
+    // aplica progresso do servidor sem perder o que já marcamos localmente
+    if (p) {
+      setDoneMap((prev) => {
+        const merged = { ...prev };
+        (p.doneIds ?? []).forEach((id) => (merged[id] = true));
+        return merged;
+      });
+      setPositions((prev) => ({ ...prev, ...(p.positions ?? {}) }));
     }
-  }, [progQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const currentIdx = useMemo(() => ordered.findIndex((v) => v.id === currentId), [ordered, currentId]);
+    if (!currentId) {
+      if (p?.lastVideoAulaId && ordered.some((v) => v.id === p.lastVideoAulaId)) {
+        setCurrentId(p.lastVideoAulaId);
+      } else if (ordered.length > 0) {
+        setCurrentId(ordered[0].id);
+      }
+    }
+  }, [ordered, progQ.data, currentId]);
+
+  const currentIdx = useMemo(
+    () => ordered.findIndex((v) => v.id === currentId),
+    [ordered, currentId]
+  );
   const current = currentIdx >= 0 ? ordered[currentIdx] : null;
 
   const total = ordered.length;
   const watched = Object.values(doneMap).filter(Boolean).length;
   const pct = total ? Math.round((watched / total) * 100) : 0;
+
+  const currentLocked = current ? isLocked(current) : false;
+  const currentReleaseLabel = current?.liberarEm ? formatDateBR(current.liberarEm) : null;
 
   // ===== MUTATION =====
   const mutation = useMutation({
@@ -89,11 +161,9 @@ export default function CursoPlayer() {
       if (vars.positionSec != null) {
         setPositions((prev) => ({ ...prev, [vars.videoAulaId]: vars.positionSec! }));
       }
-      // Atualiza doneMap tanto para true quanto para false
       if (vars.completed !== undefined) {
         setDoneMap((prev) => ({ ...prev, [vars.videoAulaId]: !!vars.completed }));
       }
-      // refetch para refletir em outras telas; nossa UI local já atualizou
       qc.invalidateQueries({ queryKey: ['progresso', { cursoId }] });
     },
     onError: (e: any) => {
@@ -105,36 +175,39 @@ export default function CursoPlayer() {
   function setCurrentAndTouch(id: string) {
     setCurrentId(id);
     const pos = positions[id] ?? 0;
-    mutation.mutate({ videoAulaId: id, positionSec: Math.max(0, Math.floor(pos)) });
+    // só toca progresso se a aula já está liberada
+    const v = ordered.find((x) => x.id === id);
+    if (v && !isLocked(v)) {
+      mutation.mutate({ videoAulaId: id, positionSec: Math.max(0, Math.floor(pos)) });
+    }
   }
 
   function reportPosition(sec: number) {
     const now = Date.now();
     if (now - lastSentRef.current < 2000) return; // throttle a cada 2s
     lastSentRef.current = now;
-    if (!current) return;
+    if (!current || currentLocked) return;
     mutation.mutate({ videoAulaId: current.id, positionSec: Math.max(0, Math.floor(sec)) });
   }
 
-  async function markCompleted() {
-    if (!current) return;
+  function markCompleted() {
+    if (!current || currentLocked) return;
     const v = videoRef.current;
     const pos = Math.floor(v?.currentTime || 0);
     mutation.mutate({ videoAulaId: current.id, completed: true, positionSec: pos || undefined });
   }
 
-  async function unmarkCompleted() {
-    if (!current) return;
+  function unmarkCompleted() {
+    if (!current || currentLocked) return;
     const v = videoRef.current;
     const pos = Math.floor(v?.currentTime || positions[current.id] || 0);
     mutation.mutate({ videoAulaId: current.id, completed: false, positionSec: pos || undefined });
   }
 
   function handleEnded() {
-    if (!current) return;
+    if (!current || currentLocked) return;
     const dur = Math.floor(videoRef.current?.duration || 0);
     mutation.mutate({ videoAulaId: current.id, completed: true, positionSec: dur || undefined });
-    // Avança automaticamente
     if (currentIdx < ordered.length - 1) setCurrentAndTouch(ordered[currentIdx + 1].id);
   }
 
@@ -147,7 +220,7 @@ export default function CursoPlayer() {
 
   // ===== RENDER =====
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
       <aside className="lg:sticky lg:top-16 self-start">
         <Card className="p-0">
           <div className="px-4 py-3 border-b border-black/10 dark:border-white/10">
@@ -158,41 +231,120 @@ export default function CursoPlayer() {
             </div>
           </div>
 
-          <ul className="max-h-[70vh] overflow-y-auto">
-            {ordered.map((v, i) => {
-              const active = v.id === currentId;
-              const watched = !!doneMap[v.id];
+          <div className="max-h-[70vh] overflow-y-auto">
+            {/* Módulos com aulas */}
+            {modulesSorted.map((md) => {
+              const items = grouped.by[md.id] ?? [];
+              if (items.length === 0) return null;
               return (
-                <li key={v.id}>
-                  <button
-                    className={[
-                      'w-full text-left px-4 py-3 flex items-center gap-3 transition',
-                      active ? 'bg-[var(--brand-primary)]/10' : 'hover:bg-black/5 dark:hover:bg-white/5',
-                    ].join(' ')}
-                    onClick={() => setCurrentAndTouch(v.id)}
-                    title={v.titulo}
-                  >
-                    {watched ? (
-                      <CheckCircle2 size={18} className="text-green-600" />
-                    ) : (
-                      <PlayCircle size={18} className="opacity-70" />
-                    )}
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">
-                        {v.ordem ?? i + 1}. {v.titulo}
-                      </div>
-                      <div className="text-xs text-[color:var(--text-muted)]">
-                        {v.duracaoMin ? `${v.duracaoMin} min` : '—'}
-                      </div>
-                    </div>
-                  </button>
-                </li>
+                <div key={md.id}>
+                  <div className="px-4 py-2 text-xs uppercase tracking-wide text-[color:var(--text-muted)] bg-black/5 dark:bg-white/5">
+                    {md.ordem ? `${md.ordem}. ` : ''}{md.nome}
+                  </div>
+                  <ul>
+                    {items.map((v, i) => {
+                      const active = v.id === currentId;
+                      const watchedItem = !!doneMap[v.id];
+                      const locked = isLocked(v);
+                      const liberaLabel = v.liberarEm ? formatDateBR(v.liberarEm) : null;
+                      return (
+                        <li key={v.id}>
+                          <button
+                            className={[
+                              'w-full text-left px-4 py-3 flex items-center gap-3 transition',
+                              active ? 'bg-[var(--brand-primary)]/10' : 'hover:bg-black/5 dark:hover:bg-white/5',
+                              locked ? 'opacity-60' : '',
+                            ].join(' ')}
+                            onClick={() => setCurrentAndTouch(v.id)}
+                            title={v.titulo}
+                          >
+                            {locked ? (
+                              <Lock size={18} className="opacity-80" />
+                            ) : watchedItem ? (
+                              <CheckCircle2 size={18} className="text-green-600" />
+                            ) : (
+                              <PlayCircle size={18} className="opacity-70" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">
+                                {v.ordem ?? i + 1}. {v.titulo}
+                              </div>
+                              <div className="text-xs text-[color:var(--text-muted)] flex items-center gap-2">
+                                {v.duracaoMin ? `${v.duracaoMin} min` : '—'}
+                                {locked && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <CalendarIcon size={12} /> Disponível em {liberaLabel}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               );
             })}
-            {!ordered.length && (
-              <li className="px-4 py-3 text-sm text-[color:var(--text-muted)]">Nenhuma aula disponível.</li>
+
+            {/* Grupo "Sem módulo" */}
+            {grouped.noModule.length > 0 && (
+              <div>
+                <div className="px-4 py-2 text-xs uppercase tracking-wide text-[color:var(--text-muted)] bg-black/5 dark:bg-white/5">
+                  Sem módulo
+                </div>
+                <ul>
+                  {grouped.noModule.map((v, i) => {
+                    const active = v.id === currentId;
+                    const watchedItem = !!doneMap[v.id];
+                    const locked = isLocked(v);
+                    const liberaLabel = v.liberarEm ? formatDateBR(v.liberarEm) : null;
+                    return (
+                      <li key={v.id}>
+                        <button
+                          className={[
+                            'w-full text-left px-4 py-3 flex items-center gap-3 transition',
+                            active ? 'bg-[var(--brand-primary)]/10' : 'hover:bg-black/5 dark:hover:bg-white/5',
+                            locked ? 'opacity-60' : '',
+                          ].join(' ')}
+                          onClick={() => setCurrentAndTouch(v.id)}
+                          title={v.titulo}
+                        >
+                          {locked ? (
+                            <Lock size={18} className="opacity-80" />
+                          ) : watchedItem ? (
+                            <CheckCircle2 size={18} className="text-green-600" />
+                          ) : (
+                            <PlayCircle size={18} className="opacity-70" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">
+                              {v.ordem ?? i + 1}. {v.titulo}
+                            </div>
+                            <div className="text-xs text-[color:var(--text-muted)] flex items-center gap-2">
+                              {v.duracaoMin ? `${v.duracaoMin} min` : '—'}
+                              {locked && (
+                                <span className="inline-flex items-center gap-1">
+                                  <CalendarIcon size={12} /> Disponível em {liberaLabel}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
-          </ul>
+
+            {/* Nenhuma aula */}
+            {ordered.length === 0 && (
+              <div className="px-4 py-3 text-sm text-[color:var(--text-muted)]">
+                Nenhuma aula disponível.
+              </div>
+            )}
+          </div>
         </Card>
       </aside>
 
@@ -200,6 +352,18 @@ export default function CursoPlayer() {
         <Card className="p-3">
           {!current ? (
             <div className="p-6 text-[color:var(--text-muted)]">Selecione uma aula na lista ao lado.</div>
+          ) : currentLocked ? (
+            <div className="p-6">
+              <div className="flex items-start gap-3">
+                <Lock size={20} className="mt-0.5" />
+                <div>
+                  <div className="font-medium">Esta aula ainda não foi liberada.</div>
+                  <div className="text-sm text-[color:var(--text-muted)]">
+                    Disponível em <b>{currentReleaseLabel}</b>. Você pode explorar outras aulas já liberadas.
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
               <div className="aspect-video bg-black/80 rounded-lg overflow-hidden">
@@ -213,7 +377,7 @@ export default function CursoPlayer() {
                   onTimeUpdate={(e) => reportPosition((e.target as HTMLVideoElement).currentTime)}
                   onPause={() => {
                     const v = videoRef.current;
-                    if (v && current) {
+                    if (v) {
                       mutation.mutate({
                         videoAulaId: current.id,
                         positionSec: Math.max(0, Math.floor(v.currentTime || 0)),
@@ -222,7 +386,7 @@ export default function CursoPlayer() {
                   }}
                   onSeeked={() => {
                     const v = videoRef.current;
-                    if (v && current) {
+                    if (v) {
                       mutation.mutate({
                         videoAulaId: current.id,
                         positionSec: Math.max(0, Math.floor(v.currentTime || 0)),
@@ -237,7 +401,10 @@ export default function CursoPlayer() {
                         v.currentTime = pos;
                       } catch {}
                     }
-                    mutation.mutate({ videoAulaId: current.id, positionSec: Math.max(0, Math.floor(pos)) });
+                    mutation.mutate({
+                      videoAulaId: current.id,
+                      positionSec: Math.max(0, Math.floor(pos)),
+                    });
                   }}
                   className="w-full h-full"
                 />
@@ -283,7 +450,7 @@ export default function CursoPlayer() {
           )}
         </Card>
 
-        {current && (
+        {current && !currentLocked && (
           <Card className="p-4">
             <div className="text-sm text-[color:var(--text-muted)] whitespace-pre-wrap">
               {current.descricao || 'Sem descrição para esta aula.'}

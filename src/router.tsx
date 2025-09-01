@@ -2,7 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import Protected from './auth/Protected';
 import RoleGuard from './auth/RoleGuard';
 import LoginPage from './screens/LoginPage';
-import Dashboard from './screens/Dashboard';
+import Dashboard from './screens/admin/Dashboard.tsx';
 
 import AdminShell from './layouts/AdminShell';
 import CursosList from './screens/admin/cursos/CursosList.tsx';
@@ -20,9 +20,12 @@ import CursoPlayer from './screens/aluno/cursos/CursoPlayer.tsx';
 import FuncionariosPage from './screens/admin/funcionarios/FuncionariosPage.tsx';
 import InformativosPage from './screens/admin/informativos/InformativosPage.tsx';
 import ModulosPage from './screens/admin/cursos/ModulosPage.tsx';
+import PerfilPage from './screens/aluno/PerfilPage.tsx';
+import LoginAdminPage from './screens/LoginAdminPage.tsx';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/login/admin', element: <LoginAdminPage /> },
 
   {
     element: <Protected />,
@@ -61,7 +64,8 @@ export const router = createBrowserRouter([
             children: [
               { index: true, element: <AlunoHome /> },
               { path: 'cursos', element: <MeusCursos /> },
-              { path: 'cursos/:cursoId', element: <CursoPlayer /> }
+              { path: 'cursos/:cursoId', element: <CursoPlayer /> },
+              { path: 'perfil', element: <PerfilPage /> },
             ],
           },
         ],

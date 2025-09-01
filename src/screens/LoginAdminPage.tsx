@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+// src/screens/LoginAdminPage.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { api } from '../lib/api';
@@ -8,11 +9,11 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 
-export default function LoginPageAluno() {
+export default function LoginAdminPage() {
   const setToken = useAuth((s) => s.setToken);
   const setProfile = useAuth((s) => s.setProfile);
 
-  const [cpfOrMatricula, setCpfOrMatricula] = useState('');
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -23,22 +24,19 @@ export default function LoginPageAluno() {
     setErr(null);
 
     try {
-      const body = { cpfOrMatricula: cpfOrMatricula.trim(), senha };
-      const { data } = await api.post('/auth/login', body);
+      const { data } = await api.post('/auth/login', { email: email.trim(), senha });
 
       const token = data.token ?? data.accessToken ?? data.access_token;
       if (!token) throw new Error('auth');
 
       setToken(token);
 
-      // carrega o perfil (opcional mas recomendado)
       const p = await fetchProfile(token);
       if (p) setProfile(p);
 
-      // redireciona sempre para área do aluno
-      window.location.href = '/aluno';
+      window.location.href = '/admin';
     } catch (_) {
-      setErr('CPF/matrícula ou senha incorretos.');
+      setErr('E-mail ou senha incorretos.');
       setSenha('');
     } finally {
       setLoading(false);
@@ -48,15 +46,16 @@ export default function LoginPageAluno() {
   return (
     <div className="min-h-screen grid place-items-center p-4">
       <Card className="w-full max-w-md p-6">
-        <h1 className="text-xl font-semibold mb-4">Bem-Vindo a Area do Aluno</h1>
+        <h1 className="text-xl font-semibold mb-4">Entrar (Admin)</h1>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <div className="label">CPF ou Matrícula</div>
+            <div className="label">E-mail</div>
             <Input
-              value={cpfOrMatricula}
-              onChange={(e) => setCpfOrMatricula(e.target.value)}
-              placeholder="123.456.789-09 ou 2025-INF-000123"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@exemplo.com"
               autoComplete="username"
               required
             />

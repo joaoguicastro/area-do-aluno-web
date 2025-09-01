@@ -1,13 +1,23 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/store';
 import { listMatriculasAtivasDoAluno } from '../../services/matriculas';
-import { listVideoAulas } from '../../services/videoaulas';
+import { listVideoAulas, type VideoAula } from '../../services/videoaulas';
 import { getCursoById } from '../../services/cursos';
 import { getCursoProgresso } from '../../services/progresso';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
+
+// helper de normalização: transforma { data: [...] } OU [...] em array
+function toArray<T = any>(raw: any): T[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw as T[];
+  if (Array.isArray(raw?.data)) return raw.data as T[];
+  return [];
+}
 
 function truncate(text: string | undefined, max = 110) {
   if (!text) return '';
@@ -25,12 +35,14 @@ function CursoCard({ m }: { m: any }) {
     staleTime: 1000 * 60 * 5,
   });
 
-  const videosQ = useQuery({
-    queryKey: ['videoaulas', { cursoId: courseId, preview: true }],
+  // Vídeo-aulas sempre como array
+  const videosQ = useQuery<VideoAula[]>({
+    queryKey: ['videoaulas', courseId],
     queryFn: () => listVideoAulas(courseId as string),
     enabled: !!courseId,
     staleTime: 1000 * 30,
   });
+  const videos = videosQ.data ?? [];
 
   const progQ = useQuery({
     queryKey: ['progresso', { cursoId: courseId }],
@@ -40,8 +52,8 @@ function CursoCard({ m }: { m: any }) {
   });
 
   const nome = cursoQ.data?.nome ?? m.curso?.nome ?? 'Curso';
-  const desc = videosQ.data?.data?.[0]?.descricao ?? '';
-  const total = progQ.data?.total ?? videosQ.data?.data?.length ?? 0;
+  const desc  = videosQ.data?.[0]?.descricao ?? '';
+  const total = progQ.data?.total ?? videosQ.data?.length ?? 0;
   const feitos = progQ.data?.feitos ?? 0;
   const pct = total ? Math.round((feitos / total) * 100) : 0;
   const hasLast = !!progQ.data?.lastVideoAulaId;
@@ -56,9 +68,7 @@ function CursoCard({ m }: { m: any }) {
         role="button"
         tabIndex={0}
         onClick={goToCourse}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') goToCourse();
-        }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') goToCourse(); }}
         className="p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition rounded-lg"
         title="Acessar curso"
       >
@@ -105,11 +115,14 @@ function CursoCard({ m }: { m: any }) {
 export default function MeusCursos() {
   const alunoId = useAuth((s) => s.profile?.alunoId ?? null);
 
-  const { data, isFetching, error } = useQuery({
+  const { data: raw, isFetching, error } = useQuery({
     queryKey: ['meus-cursos', alunoId],
     queryFn: () => listMatriculasAtivasDoAluno(alunoId as string),
     enabled: !!alunoId,
   });
+
+  // Normaliza para array – evita raw.data em tipos desconhecidos
+  const matriculas = useMemo<any[]>(() => toArray<any>(raw), [raw]);
 
   if (!alunoId) {
     return (
@@ -129,13 +142,13 @@ export default function MeusCursos() {
       <h1 className="text-2xl font-semibold">Meus Cursos</h1>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {(data ?? []).map((m: any) => (
+        {matriculas.map((m) => (
           <CursoCard key={m.id} m={m} />
         ))}
       </div>
 
       {isFetching && <p className="text-sm text-[color:var(--text-muted)]">Atualizando…</p>}
-      {!isFetching && (data?.length ?? 0) === 0 && (
+      {!isFetching && matriculas.length === 0 && (
         <p className="text-sm text-[color:var(--text-muted)]">Sem matrículas ativas.</p>
       )}
     </div>

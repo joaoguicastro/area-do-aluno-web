@@ -7,10 +7,9 @@ import {
   Layers,
   Users,
   ClipboardList,
-  ListChecks,
-  FileText,
   LayoutDashboard,
   LogOut,
+  School,
   PlayCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -31,17 +30,17 @@ export default function AdminShell() {
   const links: LinkItem[] = [
     { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/admin/cursos', label: 'Cursos', icon: GraduationCap },
-    { to: '/admin/turmas', label: 'Turmas', icon: Layers },
+    { to: '/admin/modulos', label: 'Módulos', icon: Layers },
+    { to: '/admin/turmas', label: 'Turmas', icon: School },
     { to: '/admin/alunos', label: 'Alunos', icon: Users },
     { to: '/admin/matriculas', label: 'Matrículas', icon: ClipboardList },
-    { to: '/admin/exercicios', label: 'Exercícios', icon: ListChecks },
-    { to: '/admin/provas', label: 'Provas', icon: FileText },
+    // { to: '/admin/exercicios', label: 'Exercícios', icon: ListChecks },
+    // { to: '/admin/provas', label: 'Provas', icon: FileText },
     { to: '/admin/videoaulas', label: 'Vídeo-aulas', icon: PlayCircle },
     ...(role === 'MASTER'
       ? [{ to: '/admin/funcionarios', label: 'Funcionários', icon: Users } as LinkItem]
       : []),
     { to: '/admin/informativos', label: 'Informativos', icon: Megaphone },
-    { to: '/admin/modulos', label: 'Módulos', icon: Layers }
   ];
 
   return (
