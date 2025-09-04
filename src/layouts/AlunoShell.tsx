@@ -7,13 +7,15 @@ import { useAuth } from '../auth/store';
 import { useQuery } from '@tanstack/react-query';
 import { getFinanceGate } from '../services/financeiro';
 
+const logoUrl = '/logo.png';
+
 function Brand({ compact = false, to = '/aluno' }: { compact?: boolean; to?: string }) {
   return (
     <Link to={to} className="flex items-center gap-2">
       <picture>
-        <source srcSet="/public/Logotipo-vertical-normal-2.png" type="image/svg+xml" />
+        <source srcSet={logoUrl} type="image/svg+xml" />
         <img
-          src="/public/Logotipo-vertical-normal-2.png"
+          src={logoUrl}
           alt="Infinity Cursos"
           className={compact ? 'h-6 w-auto' : 'h-8 w-auto'}
           loading="eager"
