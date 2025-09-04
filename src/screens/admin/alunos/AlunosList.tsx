@@ -107,7 +107,7 @@ export default function AlunosList() {
       // NÃO envie null — deixe undefined/omita
       telefone: form.telefone ? form.telefone.trim() : undefined,
       email: form.email ? form.email.trim() : undefined,
-      fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : undefined,
+      // fotoUrl: form.fotoUrl ? form.fotoUrl.trim() : undefined,
       senha: form.senha,
       prefixoMatricula: form.prefixoMatricula || 'INF',
     };
@@ -212,7 +212,7 @@ export default function AlunosList() {
         cidade: editForm.cidade.trim(),
         telefone: editForm.telefone ? editForm.telefone.trim() : undefined,
         email: editForm.email ? editForm.email.trim() : undefined,
-        fotoUrl: editForm.fotoUrl ? editForm.fotoUrl.trim() : undefined,
+        // fotoUrl: editForm.fotoUrl ? editForm.fotoUrl.trim() : undefined,
       });
       setEditOpen(false);
       setSelected(null);
@@ -365,10 +365,6 @@ export default function AlunosList() {
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                   />
                 </div>
-                <div>
-                  <div className="label">URL da foto (opcional)</div>
-                  <Input value={form.fotoUrl} onChange={(e) => setForm({ ...form, fotoUrl: e.target.value })} />
-                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -487,10 +483,6 @@ export default function AlunosList() {
                 <div>
                   <div className="label">E-mail</div>
                   <Input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
-                </div>
-                <div>
-                  <div className="label">URL da foto</div>
-                  <Input value={editForm.fotoUrl} onChange={(e) => setEditForm({ ...editForm, fotoUrl: e.target.value })} />
                 </div>
               </div>
 
