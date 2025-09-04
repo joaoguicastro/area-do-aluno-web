@@ -11,6 +11,7 @@ import {
   LogOut,
   School,
   PlayCircle,
+  Cog,
   type LucideIcon,
 } from 'lucide-react';
 import ThemeToggle from '../theme/ThemeToggle';
@@ -41,6 +42,9 @@ export default function AdminShell() {
       ? [{ to: '/admin/funcionarios', label: 'Funcionários', icon: Users } as LinkItem]
       : []),
     { to: '/admin/informativos', label: 'Informativos', icon: Megaphone },
+    ...(role === 'MASTER'
+      ? [{ to: '/admin/config', label: 'Configurações', icon: Cog } as LinkItem]
+      : []),
   ];
 
   return (

@@ -18,11 +18,7 @@ function normalizeRole(r: any): Role {
   }
 }
 
-/**
- * Busca o perfil a partir do token.
- * - Se ALUNO, consulta /aluno/me para pegar dados completos.
- * - Para admin/master/operador, retorna dados básicos do token (ou adapte para /users/me se tiver).
- */
+/** Busca o perfil a partir do token. Não chama mais nenhum “gate”. */
 export async function fetchProfile(token: string): Promise<Profile | null> {
   const payload = parseJwt<any>(token);
   if (!payload) return null;
@@ -31,7 +27,7 @@ export async function fetchProfile(token: string): Promise<Profile | null> {
 
   if (role === 'ALUNO') {
     try {
-      const { data } = await api.get<{ aluno: { id: string; nome: string; email?: string | null; matricula: string } }>('/aluno/me');
+      const { data } = await api.get<{ aluno: { id: string; nome: string; email?: string | null; matricula?: string } }>('/aluno/me');
       return {
         id: data.aluno.id,
         role: 'ALUNO',

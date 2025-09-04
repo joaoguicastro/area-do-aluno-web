@@ -6,8 +6,13 @@ import {
   listMatriculas,
   createMatricula,
   deleteMatricula,
+  listParcelasByMatricula,
+  baixaParcela,
+  estornarParcela,
   type Matricula,
   type MatriculaStatus,
+  type Parcela,
+  type FormaPagamento,
 } from '../../../services/matriculas';
 import { listAlunos, type Aluno } from '../../../services/alunos';
 import { listCursos, type Curso } from '../../../services/cursos';
@@ -25,6 +30,12 @@ function formatISODate(iso?: string | null) {
   const [y, m, d] = ymd.split('-');
   if (!y || !m || !d) return '—';
   return `${d}/${m}/${y}`;
+}
+
+function formatBRL(n?: number | null) {
+  if (n == null) return '—';
+  try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n); }
+  catch { return String(n); }
 }
 
 export default function MatriculasList() {
@@ -63,6 +74,7 @@ export default function MatriculasList() {
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [form, setForm] = useState<{
     alunoId: string;
@@ -127,9 +139,11 @@ export default function MatriculasList() {
   }
 
   async function handleDelete(id: string) {
+    setPendingDeleteId(id);
     await deleteMatricula(id);
     await qc.invalidateQueries({ queryKey: ['matriculas'] });
     setOpenModal(false);
+    setPendingDeleteId(null);
   }
 
   const cursosMap = useMemo(() => {
@@ -187,6 +201,49 @@ export default function MatriculasList() {
     return m;
   }, [turmasByIdsQuery.data, turmasQuery.data]);
 
+  /* ---------------------- Parcelas Modal ---------------------- */
+
+  const [parcelasOpen, setParcelasOpen] = useState(false);
+  const [selected, setSelected] = useState<Matricula | null>(null);
+
+  const parcelasQuery = useQuery({
+    queryKey: ['parcelas-by-matricula', selected?.id],
+    queryFn: () => listParcelasByMatricula(selected!.id),
+    enabled: parcelasOpen && !!selected?.id,
+    staleTime: 1000 * 10,
+  });
+
+  const [baixaForm, setBaixaForm] = useState<Record<string, { // por parcela.id
+    formaPagamento: FormaPagamento;
+    valorPago: string; // string para aceitar vírgula
+    pagoEm?: string;
+  }>>({});
+
+  function openParcelas(m: Matricula) {
+    setSelected(m);
+    setParcelasOpen(true);
+  }
+
+  async function handleBaixa(p: Parcela) {
+    const f = baixaForm[p.id] ?? { formaPagamento: 'DINHEIRO', valorPago: String(p.valor) };
+    const valor = parseFloat((f.valorPago ?? '').replace(',', '.'));
+    if (!Number.isFinite(valor) || valor <= 0) return alert('Informe um valor pago válido.');
+
+    await baixaParcela(p.id, {
+      formaPagamento: f.formaPagamento,
+      valorPago: valor,
+      pagoEm: f.pagoEm || undefined,
+    });
+    await qc.invalidateQueries({ queryKey: ['parcelas-by-matricula', selected?.id] });
+    await qc.invalidateQueries({ queryKey: ['matriculas'] });
+  }
+
+  async function handleEstorno(p: Parcela) {
+    await estornarParcela(p.id);
+    await qc.invalidateQueries({ queryKey: ['parcelas-by-matricula', selected?.id] });
+    await qc.invalidateQueries({ queryKey: ['matriculas'] });
+  }
+
   const total = data?.total ?? 0;
   const perPage = data?.perPage ?? 10;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -222,7 +279,7 @@ export default function MatriculasList() {
                 <th className="py-2">Início</th>
                 <th className="py-2">Fim</th>
                 <th className="py-2">Status</th>
-                <th className="py-2 w-24"></th>
+                <th className="py-2 w-48"></th>
               </tr>
             </thead>
             <tbody>
@@ -241,19 +298,27 @@ export default function MatriculasList() {
                     </span>
                   </td>
                   <td className="py-3">
-                    <button
-                      className="btn btn-ghost text-red-600"
-                      title="Excluir"
-                      onClick={() => setOpenModal(true)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => openParcelas(m)}
+                      >
+                        Parcelas
+                      </button>
 
-                    <ConfirmModal
-                      open={openModal}
-                      onConfirm={() => handleDelete(m.id)}
-                      onCancel={() => setOpenModal(false)}
-                    />
+                      <button
+                        className="btn btn-ghost text-red-600"
+                        title="Excluir"
+                        onClick={() => { setPendingDeleteId(m.id); setOpenModal(true); }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      <ConfirmModal
+                        open={openModal && pendingDeleteId === m.id}
+                        onConfirm={() => handleDelete(m.id)}
+                        onCancel={() => setOpenModal(false)}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -294,7 +359,7 @@ export default function MatriculasList() {
         </div>
       </Card>
 
-      {/* Modal de criação */}
+      {/* Modal: Nova matrícula */}
       {open && (
         <div className="fixed inset-0 bg-black/50 grid place-items-center z-50">
           <div className="card w-full max-w-2xl p-6">
@@ -398,6 +463,112 @@ export default function MatriculasList() {
                 <Button disabled={creating}>{creating ? 'Salvando…' : 'Salvar'}</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Parcelas da matrícula */}
+      {parcelasOpen && selected && (
+        <div className="fixed inset-0 bg-black/50 grid place-items-center z-50">
+          <div className="card w-full max-w-3xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">
+                Parcelas — {alunosMap[selected.alunoId] ?? selected.alunoId} / {cursosMap[selected.cursoId] ?? selected.cursoId}
+              </h2>
+              <button className="btn btn-ghost" onClick={() => setParcelasOpen(false)}>Fechar</button>
+            </div>
+
+            {parcelasQuery.isLoading ? (
+              <p>Carregando…</p>
+            ) : parcelasQuery.data && parcelasQuery.data.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[color:var(--text-muted)]">
+                      <th className="py-2">#</th>
+                      <th className="py-2">Vencimento</th>
+                      <th className="py-2">Valor</th>
+                      <th className="py-2">Status</th>
+                      <th className="py-2">Pagamento</th>
+                      <th className="py-2 w-64">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parcelasQuery.data.map((p: Parcela) => (
+                      <tr key={p.id} className="border-t border-black/5 align-top">
+                        <td className="py-2">{p.numero}</td>
+                        <td className="py-2">{formatISODate(p.vencimento)}</td>
+                        <td className="py-2">{formatBRL(p.valor)}</td>
+                        <td className="py-2">
+                          <span className="inline-block px-2 py-0.5 rounded bg-black/5 dark:bg-white/10">
+                            {p.status}
+                          </span>
+                        </td>
+                        <td className="py-2">
+                          {p.status === 'PAGA' ? (
+                            <div className="text-xs">
+                              <div><b>Forma:</b> {p.formaPagamento ?? '-'}</div>
+                              <div><b>Pago em:</b> {formatISODate(p.pagoEm)}</div>
+                              <div><b>Valor pago:</b> {formatBRL(p.valorPago ?? undefined)}</div>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-3 gap-2">
+                              <select
+                                className="input"
+                                value={baixaForm[p.id]?.formaPagamento ?? 'DINHEIRO'}
+                                onChange={(e) => setBaixaForm(s => ({ 
+                                  ...s, 
+                                  [p.id]: { 
+                                    ...(s[p.id] ?? { valorPago: String(p.valor) }), 
+                                    formaPagamento: e.target.value as FormaPagamento 
+                                  } 
+                                }))}
+                              >
+                                <option value="DINHEIRO">DINHEIRO</option>
+                                <option value="PIX">PIX</option>
+                                <option value="CARTAO_CREDITO">CARTÃO CRÉDITO</option>
+                                <option value="BOLETO">BOLETO</option>
+                              </select>
+                              <Input
+                                placeholder={String(p.valor)}
+                                value={baixaForm[p.id]?.valorPago ?? String(p.valor)}
+                                onChange={(e) => setBaixaForm(s => ({ 
+                                  ...s, 
+                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO' }), valorPago: e.target.value } 
+                                }))}
+                              />
+                              <Input
+                                type="datetime-local"
+                                value={baixaForm[p.id]?.pagoEm ?? ''}
+                                onChange={(e) => setBaixaForm(s => ({ 
+                                  ...s, 
+                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO', valorPago: String(p.valor) }), pagoEm: e.target.value } 
+                                }))}
+                              />
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {p.status === 'ABERTA' ? (
+                            <div className="flex gap-2">
+                              <Button onClick={() => handleBaixa(p)}>Dar baixa</Button>
+                            </div>
+                          ) : p.status === 'PAGA' ? (
+                            <button className="btn btn-ghost text-red-600" onClick={() => handleEstorno(p)}>
+                              Estornar
+                            </button>
+                          ) : (
+                            <span className="text-xs text-[color:var(--text-muted)]">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p>Nenhuma parcela gerada.</p>
+            )}
           </div>
         </div>
       )}

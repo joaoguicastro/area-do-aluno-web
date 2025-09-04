@@ -9,6 +9,19 @@ export type Curso = {
   createdAt: string;
 };
 
+export type FinanceiroDTO = {
+  id: string;
+  cursoId: string;
+  nome: string;
+  valorTotal: number;
+  numeroParcelas: number;
+  diaVencimento?: number | null;
+  jurosAoMes?: number | null;
+  multaPercent?: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ListResponse<T> = {
   data: T[];
   total: number;
@@ -24,12 +37,30 @@ export async function listCursos(params: { q?: string; page?: number; perPage?: 
   return data;
 }
 
-export async function createCurso(payload: { nome: string; modality: 'ONLINE'|'PRESENCIAL'; duracaoHoras?: number | null }) {
-  const { data } = await api.post<{ curso: Curso }>('/cursos', payload);
-  return data.curso;
+export type CreateCursoPayload = {
+  nome: string;
+  modality: 'ONLINE' | 'PRESENCIAL';
+  duracaoHoras?: number | null;
+  financeiro?: {
+    nome: string;
+    valorTotal: number | string;
+    numeroParcelas: number;
+    diaVencimento?: number | null;
+    jurosAoMes?: number | null;
+    multaPercent?: number | null;
+  };
+};
+
+export async function createCurso(payload: CreateCursoPayload) {
+  // API retorna { curso, financeiro? }
+  const { data } = await api.post<{ curso: Curso; financeiro?: FinanceiroDTO }>('/cursos', payload);
+  return data; // devolve o objeto inteiro para quem quiser usar o financeiro
 }
 
-export async function updateCurso(id: string, payload: Partial<{ nome: string; modality: 'ONLINE'|'PRESENCIAL'; duracaoHoras: number | null }>) {
+export async function updateCurso(
+  id: string,
+  payload: Partial<{ nome: string; modality: 'ONLINE'|'PRESENCIAL'; duracaoHoras: number | null }>
+) {
   const { data } = await api.patch<{ curso: Curso }>(`/cursos/${id}`, payload);
   return data.curso;
 }

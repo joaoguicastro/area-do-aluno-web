@@ -57,3 +57,37 @@ export async function updateMatricula(id: string, payload: Partial<CreateMatricu
 export async function deleteMatricula(id: string) {
   await api.delete(`/matriculas/${id}`);
 }
+
+/* ---------------------- Financeiro / Parcelas ---------------------- */
+
+export type StatusParcela = 'ABERTA' | 'PAGA' | 'ESTORNADA';
+export type FormaPagamento = 'DINHEIRO' | 'PIX' | 'CARTAO_CREDITO' | 'BOLETO';
+
+export type Parcela = {
+  id: string;
+  matriculaId: string;
+  numero: number;           // 1..N
+  valor: number;            // mapeado pelo back pra number
+  vencimento: string;       // ISO
+  status: StatusParcela;
+  formaPagamento?: FormaPagamento | null;
+  pagoEm?: string | null;
+  valorPago?: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listParcelasByMatricula(matriculaId: string) {
+  const { data } = await api.get<Parcela[]>(`/matriculas/${matriculaId}/parcelas`);
+  return data;
+}
+
+export async function baixaParcela(id: string, payload: { formaPagamento: FormaPagamento; valorPago: number; pagoEm?: string }) {
+  const { data } = await api.patch<Parcela>(`/parcelas/${id}/baixa`, payload);
+  return data;
+}
+
+export async function estornarParcela(id: string) {
+  const { data } = await api.patch<Parcela>(`/parcelas/${id}/estorno`, {});
+  return data;
+}

@@ -1,3 +1,4 @@
+// src/services/videoaulas.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { api } from '../lib/api';
 
@@ -10,8 +11,8 @@ export type VideoAula = {
   urlVideo: string;
   ordem?: number | null;
   duracaoMin?: number | null;
-  createdAt: string;           // ISO
-  liberarEm?: string | null;   // ISO ou null
+  createdAt?: string;          // deixa opcional pra ser resiliente
+  liberarEm?: string | null;
 };
 
 export type CreateVideoAulaPayload = {
@@ -21,10 +22,10 @@ export type CreateVideoAulaPayload = {
   ordem?: number | null;
   duracaoMin?: number | null;
   moduloId?: string | null;
-  liberarEm?: string | null | Date; // aceita 'YYYY-MM-DD', ISO ou Date
+  liberarEm?: string | null | Date;
 };
 
-// ----- helpers -----
+// --- helpers ---
 function normalizeVideoAula(raw: any): VideoAula {
   return {
     id: raw.id,
@@ -35,24 +36,44 @@ function normalizeVideoAula(raw: any): VideoAula {
     urlVideo: raw.urlVideo,
     ordem: raw.ordem ?? null,
     duracaoMin: raw.duracaoMin ?? null,
-    createdAt: String(raw.createdAt ?? ''),
-    liberarEm: raw.liberarEm ? String(raw.liberarEm) : null,
+    createdAt: raw.createdAt ? String(raw.createdAt) : undefined,
+    liberarEm: raw.liberarEm != null ? String(raw.liberarEm) : null,
   };
+}
+
+function extractArray(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    if (Array.isArray((data as any).data)) return (data as any).data;
+    if (Array.isArray((data as any).videos)) return (data as any).videos;        // <= seu caso
+    if (Array.isArray((data as any).videoAulas)) return (data as any).videoAulas;
+  }
+  return [];
 }
 
 function normalizeLiberarEm(v: string | null | Date | undefined) {
   if (!v) return null;
   if (v instanceof Date) return v.toISOString();
-  // se vier 'YYYY-MM-DD', fixa 00:00:00 local
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00:00`;
-  return v; // já é ISO
+  return v;
 }
 
-// ----- API -----
-export async function listVideoAulas(cursoId: string): Promise<VideoAula[]> {
-  const { data } = await api.get(`/cursos/${cursoId}/videoaulas`);
-  const arr = Array.isArray(data) ? data : (data?.data ?? data?.videos ?? []);
-  return (arr as any[]).map(normalizeVideoAula);
+// --- API ---
+export async function listVideoAulas(cursoId: string) {
+  try {
+    const { data } = await api.get(`/cursos/${cursoId}/videoaulas`);
+    const list = extractArray(data).map(normalizeVideoAula);
+    return list as VideoAula[];
+  } catch (e: any) {
+    const code = e?.response?.data?.code;
+    if (e?.response?.status === 403 && code === 'BLOQUEIO_INADIMPLENCIA') {
+      const err = new Error(e.response.data.message);
+      (err as any).code = code;
+      (err as any).info = e.response.data;
+      throw err;
+    }
+    throw e;
+  }
 }
 
 export async function addVideoAula(cursoId: string, payload: CreateVideoAulaPayload) {
@@ -67,8 +88,7 @@ export async function addVideoAula(cursoId: string, payload: CreateVideoAulaPayl
   if (payload.liberarEm !== undefined) body.liberarEm = normalizeLiberarEm(payload.liberarEm);
 
   const { data } = await api.post(`/cursos/${cursoId}/videoaulas`, body);
-  // back pode devolver { video: {...} } ou o objeto direto
-  const raw = (data?.video ?? data) as any;
+  const raw = (data?.video ?? data?.videoAula ?? data?.data ?? data) as any;
   return normalizeVideoAula(raw);
 }
 

@@ -26,18 +26,29 @@ export default function LoginPageAluno() {
       const body = { cpfOrMatricula: cpfOrMatricula.trim(), senha };
       const { data } = await api.post('/auth/login', body);
 
-      const token = data.token ?? data.accessToken ?? data.access_token;
+      // o back retorna { token, role, aluno, financeLock? }
+      const token: string = data.token ?? data.accessToken ?? data.access_token;
       if (!token) throw new Error('auth');
 
       setToken(token);
 
-      // carrega o perfil (opcional mas recomendado)
+      // busca o perfil normal
       const p = await fetchProfile(token);
-      if (p) setProfile(p);
 
-      // redireciona sempre para área do aluno
-      window.location.href = '/aluno';
-    } catch (_) {
+      // injeta o financeLock que veio do /auth/login (se houver)
+      const financeLock = (data.financeLock ?? null) as
+        | { active: boolean; limite: number; maiorAtraso: number }
+        | null;
+
+      if (p) setProfile({ ...p, financeLock });
+
+      // redireciona: se estiver com bloqueio financeiro ativo, manda para a página de financeiro
+      if (financeLock?.active) {
+        window.location.href = '/aluno/financeiro';
+      } else {
+        window.location.href = '/aluno';
+      }
+    } catch (_e) {
       setErr('CPF/matrícula ou senha incorretos.');
       setSenha('');
     } finally {
@@ -48,7 +59,7 @@ export default function LoginPageAluno() {
   return (
     <div className="min-h-screen grid place-items-center p-4">
       <Card className="w-full max-w-md p-6">
-        <h1 className="text-xl font-semibold mb-4">Bem-Vindo a Area do Aluno</h1>
+        <h1 className="text-xl font-semibold mb-4">Bem-Vindo à Área do Aluno</h1>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>

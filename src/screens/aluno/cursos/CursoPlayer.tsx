@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable no-empty */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -41,16 +42,10 @@ export default function CursoPlayer() {
 
   // ===== QUERIES =====
   const aulasQ = useQuery<VideoAula[]>({
-  queryKey: ['videoaulas', cursoId],
-  queryFn: () => listVideoAulas(cursoId),
-  enabled: !!cursoId,
+    queryKey: ['videoaulas', cursoId],
+    queryFn: () => listVideoAulas(cursoId),
+    enabled: !!cursoId,
   });
-  const ordered = useMemo(() => (aulasQ.data ?? []).slice().sort(
-    (a, b) =>
-      (a.ordem ?? 1e9) - (b.ordem ?? 1e9) ||
-      (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
-  ), [aulasQ.data]);
-
 
   const progQ = useQuery({
     queryKey: ['progresso', { cursoId }],
@@ -71,7 +66,16 @@ export default function CursoPlayer() {
     staleTime: 30_000,
   });
 
-  // Ordenação estável: ordem (nulls por último), depois createdAt
+  // ===== ORDENAÇÕES / AGRUPAMENTOS =====
+  const ordered = useMemo(
+    () =>
+      (aulasQ.data ?? []).slice().sort(
+        (a, b) =>
+          (a.ordem ?? 1e9) - (b.ordem ?? 1e9) ||
+          (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+      ),
+    [aulasQ.data]
+  );
 
   // Ordena módulos por ordem (nulos por último) e nome
   const modulesSorted = useMemo(() => {

@@ -7,7 +7,6 @@ import Dashboard from './screens/admin/Dashboard.tsx';
 import AdminShell from './layouts/AdminShell';
 import CursosList from './screens/admin/cursos/CursosList.tsx';
 
-import AlunoShell from './layouts/AlunoShell';
 import AlunoHome from './screens/aluno/Home';
 import MeusCursos from './screens/aluno/MeusCursos';
 import TurmasList from './screens/admin/turmas/TurmasList.tsx';
@@ -22,6 +21,9 @@ import InformativosPage from './screens/admin/informativos/InformativosPage.tsx'
 import ModulosPage from './screens/admin/cursos/ModulosPage.tsx';
 import PerfilPage from './screens/aluno/PerfilPage.tsx';
 import LoginAdminPage from './screens/LoginAdminPage.tsx';
+import FinanceiroConfig from './screens/admin/FinanceiroConfig.tsx';
+import FinanceiroLock from './screens/aluno/financeiro/FinanceiroLock.tsx';
+import AlunoShell from './layouts/AlunoShell.tsx';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -32,7 +34,7 @@ export const router = createBrowserRouter([
     children: [
       // ADMIN
       {
-        element: <RoleGuard allow={['MASTER','ADMIN','FUNCIONARIO']} />,
+        element: <RoleGuard allow={['MASTER','ADMIN']} />,
         children: [
           {
             path: '/admin',
@@ -49,6 +51,7 @@ export const router = createBrowserRouter([
               { path: 'funcionarios', element: <FuncionariosPage /> },
               { path: 'informativos', element: <InformativosPage /> },
               { path: 'modulos', element: <ModulosPage /> },
+              { path: 'config', element: <FinanceiroConfig /> },
             ],
           },
         ],
@@ -66,6 +69,7 @@ export const router = createBrowserRouter([
               { path: 'cursos', element: <MeusCursos /> },
               { path: 'cursos/:cursoId', element: <CursoPlayer /> },
               { path: 'perfil', element: <PerfilPage /> },
+              { path: 'financeiro', element: <FinanceiroLock /> }
             ],
           },
         ],

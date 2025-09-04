@@ -10,6 +10,7 @@ import { Card } from '../../../ui/Card';
 import { Input } from '../../../ui/Input';
 import { useDebounce } from '../../../utils/useDebounce';
 import { Plus, Trash2, Pencil } from 'lucide-react';
+import { maskPhoneBR } from '../../../utils/maskPhoneBR';
 
 function onlyDigits(v: string) {
   return (v || '').replace(/\D/g, '');
@@ -184,7 +185,7 @@ export default function AlunosList() {
       numero: a.numero ?? '',
       bairro: a.bairro ?? '',
       cidade: a.cidade ?? '',
-      telefone: a.telefone ?? '',
+      telefone: maskPhoneBR(a.telefone ?? ''),
       email: a.email ?? '',
       fotoUrl: a.fotoUrl ?? '',
     });
@@ -354,7 +355,7 @@ export default function AlunosList() {
                 </div>
                 <div>
                   <div className="label">Telefone</div>
-                  <Input value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+                  <Input value={form.telefone} onChange={(e) => setForm({ ...form, telefone: maskPhoneBR(e.target.value) })} />
                 </div>
                 <div>
                   <div className="label">E-mail</div>
@@ -481,7 +482,7 @@ export default function AlunosList() {
                 </div>
                 <div>
                   <div className="label">Telefone</div>
-                  <Input value={editForm.telefone} onChange={(e) => setEditForm({ ...editForm, telefone: e.target.value })} />
+                  <Input value={editForm.telefone} onChange={(e) => setEditForm({ ...editForm, telefone: maskPhoneBR(e.target.value) })} />
                 </div>
                 <div>
                   <div className="label">E-mail</div>
