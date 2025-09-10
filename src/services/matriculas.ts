@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { api } from '../lib/api';
-import type { ListResponse } from './cursos';
 
 export type Matricula = {
   id: string;
   alunoId: string;
   cursoId: string;
-  turmaId: string;
+  turmaId: string | null;
   status: 'ATIVA' | 'TRANCADA' | 'CANCELADA' | 'CONCLUIDA';
   dataInicio?: string | null;
   dataFim?: string | null;
@@ -19,13 +18,10 @@ export type Matricula = {
 };
 
 export async function listMatriculasAtivasDoAluno(alunoId: string) {
-  const { data } = await api.get<{
-    data: Matricula[];
-    total: number;
-    page: number;
-    perPage: number;
-  }>('/matriculas', { params: { alunoId, status: 'ATIVA', page: 1, perPage: 50 } });
-  return data.data;
+  const { data } = await api.get<{ data: Matricula[] }>('/matriculas', {
+    params: { alunoId, status: 'ATIVA' },
+  });
+  return data.data; 
 }
 
 export type MatriculaStatus = 'ATIVA' | 'TRANCADA' | 'CANCELADA' | 'CONCLUIDA';
@@ -34,14 +30,14 @@ export type CreateMatriculaPayload = {
   alunoId: string;
   cursoId: string;
   turmaId?: string | null;
-  status?: MatriculaStatus;   // default ATIVA
-  dataInicio?: string | null; // 'YYYY-MM-DD'
-  dataFim?: string | null;    // 'YYYY-MM-DD'
+  status?: MatriculaStatus; 
+  dataInicio?: string | null;
+  dataFim?: string | null;
 };
 
-export async function listMatriculas(params: { q?: string; page?: number; perPage?: number } = {}) {
-  const { data } = await api.get<ListResponse<Matricula>>('/matriculas', { params });
-  return data;
+export async function listMatriculas() {
+  const { data } = await api.get<{ data: Matricula[] }>('/matriculas');
+  return data.data;
 }
 
 export async function createMatricula(payload: CreateMatriculaPayload) {
@@ -58,7 +54,6 @@ export async function deleteMatricula(id: string) {
   await api.delete(`/matriculas/${id}`);
 }
 
-/* ---------------------- Financeiro / Parcelas ---------------------- */
 
 export type StatusParcela = 'ABERTA' | 'PAGA' | 'ESTORNADA';
 export type FormaPagamento = 'DINHEIRO' | 'PIX' | 'CARTAO_CREDITO' | 'BOLETO';
@@ -66,9 +61,9 @@ export type FormaPagamento = 'DINHEIRO' | 'PIX' | 'CARTAO_CREDITO' | 'BOLETO';
 export type Parcela = {
   id: string;
   matriculaId: string;
-  numero: number;           // 1..N
-  valor: number;            // mapeado pelo back pra number
-  vencimento: string;       // ISO
+  numero: number;           
+  valor: number;           
+  vencimento: string;     
   status: StatusParcela;
   formaPagamento?: FormaPagamento | null;
   pagoEm?: string | null;

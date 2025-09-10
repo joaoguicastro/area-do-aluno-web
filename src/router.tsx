@@ -24,6 +24,7 @@ import LoginAdminPage from './screens/LoginAdminPage.tsx';
 import FinanceiroConfig from './screens/admin/FinanceiroConfig.tsx';
 import FinanceiroLock from './screens/aluno/financeiro/FinanceiroLock.tsx';
 import AlunoShell from './layouts/AlunoShell.tsx';
+import ApostilasPage from './screens/admin/apostilas/ApostilasPage.tsx';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
               { path: 'informativos', element: <InformativosPage /> },
               { path: 'modulos', element: <ModulosPage /> },
               { path: 'config', element: <FinanceiroConfig /> },
+              { path: 'apostilas', element: <ApostilasPage /> },
             ],
           },
         ],
