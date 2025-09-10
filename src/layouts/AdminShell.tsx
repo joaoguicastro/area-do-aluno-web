@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NavLink, Outlet } from 'react-router-dom';
-import { Megaphone } from 'lucide-react';
+import { Book, Megaphone } from 'lucide-react';
 import {
   GraduationCap,
   Layers,
@@ -32,6 +32,7 @@ export default function AdminShell() {
     { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/admin/cursos', label: 'Cursos', icon: GraduationCap },
     { to: '/admin/modulos', label: 'Módulos', icon: Layers },
+    { to: '/admin/apostilas', label: 'Apostilas', icon: Book },
     { to: '/admin/turmas', label: 'Turmas', icon: School },
     { to: '/admin/alunos', label: 'Alunos', icon: Users },
     { to: '/admin/matriculas', label: 'Matrículas', icon: ClipboardList },

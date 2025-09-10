@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { api } from '../lib/api';
 
 export async function uploadVideo(file: File, onUploadProgress?: (p: number) => void): Promise<{ url: string }> {
@@ -13,5 +14,16 @@ export async function uploadVideo(file: File, onUploadProgress?: (p: number) => 
     },
   });
 
+  return data; 
+}
+
+export async function uploadFile(file: File, extra?: Record<string, any>) {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (extra) Object.entries(extra).forEach(([k, v]) => fd.append(k, String(v)));
+
+  const { data } = await api.post<{ url: string }>('/uploads/file', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data; 
 }

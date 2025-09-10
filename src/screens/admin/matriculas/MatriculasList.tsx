@@ -26,7 +26,7 @@ import { ConfirmModal } from '../../../ui/Delete';
 
 function formatISODate(iso?: string | null) {
   if (!iso) return '—';
-  const ymd = iso.split('T')[0]; // suporta 'YYYY-MM-DD' e 'YYYY-MM-DDTHH:mm:ssZ'
+  const ymd = iso.split('T')[0];
   const [y, m, d] = ymd.split('-');
   if (!y || !m || !d) return '—';
   return `${d}/${m}/${y}`;
@@ -42,12 +42,14 @@ export default function MatriculasList() {
   const qc = useQueryClient();
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const debounced = useDebounce(q);
 
-  const { data, isFetching, error } = useQuery({
-    queryKey: ['matriculas', { q: debounced, page }],
-    queryFn: () => listMatriculas({ q: debounced || undefined, page, perPage: 10 }),
-    staleTime: 1000 * 10,
+  // 🔹 Busca TODAS as matrículas (sem paginação server-side)
+  const { data: allMatriculas, isFetching, error } = useQuery({
+    queryKey: ['matriculas', { refresh: true }],
+    queryFn: () => listMatriculas(),
+    staleTime: 10_000,
   });
 
   if (error) {
@@ -162,14 +164,38 @@ export default function MatriculasList() {
     return m;
   }, [alunosQuery.data]);
 
-  // ids de turmas presentes na TABELA (ignora null e repetidos)
+  // 🔎 Filtro por texto (cliente)
+  const filtered: Matricula[] = useMemo(() => {
+    const base = allMatriculas ?? [];
+    const term = debounced.trim().toLowerCase();
+    if (!term) return base;
+
+    return base.filter((m) => {
+      const aluno = m.alunoNome ?? alunosMap[m.alunoId] ?? m.alunoId;
+      const curso = m.cursoNome ?? cursosMap[m.cursoId] ?? m.cursoId;
+      const turma = m.turmaNome ?? m.turmaId ?? '';
+      return (
+        String(aluno).toLowerCase().includes(term) ||
+        String(curso).toLowerCase().includes(term) ||
+        String(turma).toLowerCase().includes(term)
+      );
+    });
+  }, [allMatriculas, debounced, alunosMap, cursosMap]);
+
+  // 📄 Paginação no cliente
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const start = (page - 1) * perPage;
+  const pageItems = filtered.slice(start, start + perPage);
+
+  // ids de turmas presentes NA PÁGINA (para map de nomes)
   const turmaIdsFromTable = useMemo(() => {
     const set = new Set<string>();
-    (data?.data ?? []).forEach((m: Matricula) => {
+    pageItems.forEach((m: Matricula) => {
       if (m.turmaId) set.add(m.turmaId);
     });
     return Array.from(set);
-  }, [data?.data]);
+  }, [pageItems]);
 
   type TurmaNameMap = Record<string, string>;
 
@@ -192,7 +218,7 @@ export default function MatriculasList() {
 
   const turmasMap = useMemo(() => {
     const m: Record<string, string> = {};
-    // nomes vindos dos ids presentes na TABELA
+    // nomes vindos dos ids presentes na TABELA (página atual)
     Object.assign(m, turmasByIdsQuery.data ?? {});
     // nomes vindos do curso selecionado (útil para o select do modal)
     (turmasQuery.data ?? []).forEach((t: Turma) => {
@@ -213,9 +239,9 @@ export default function MatriculasList() {
     staleTime: 1000 * 10,
   });
 
-  const [baixaForm, setBaixaForm] = useState<Record<string, { // por parcela.id
+  const [baixaForm, setBaixaForm] = useState<Record<string, {
     formaPagamento: FormaPagamento;
-    valorPago: string; // string para aceitar vírgula
+    valorPago: string;
     pagoEm?: string;
   }>>({});
 
@@ -243,10 +269,6 @@ export default function MatriculasList() {
     await qc.invalidateQueries({ queryKey: ['parcelas-by-matricula', selected?.id] });
     await qc.invalidateQueries({ queryKey: ['matriculas'] });
   }
-
-  const total = data?.total ?? 0;
-  const perPage = data?.perPage ?? 10;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   return (
     <div className="space-y-4">
@@ -283,7 +305,7 @@ export default function MatriculasList() {
               </tr>
             </thead>
             <tbody>
-              {data?.data?.map((m: Matricula) => (
+              {pageItems.map((m: Matricula) => (
                 <tr key={m.id} className="border-t border-black/5">
                   <td className="py-3">{m.alunoNome ?? alunosMap[m.alunoId] ?? m.alunoId}</td>
                   <td className="py-3">{m.cursoNome ?? cursosMap[m.cursoId] ?? m.cursoId}</td>
@@ -322,7 +344,7 @@ export default function MatriculasList() {
                   </td>
                 </tr>
               ))}
-              {!isFetching && (data?.data?.length ?? 0) === 0 && (
+              {!isFetching && pageItems.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-[color:var(--text-muted)]">
                     Nenhuma matrícula encontrada.
@@ -333,11 +355,19 @@ export default function MatriculasList() {
           </table>
         </div>
 
+        {/* Paginação cliente */}
         <div className="flex items-center justify-between mt-3">
           <div className="text-xs text-[color:var(--text-muted)]">
-            {isFetching ? 'Atualizando…' : `${data?.data?.length ?? 0} / ${total} itens`}
+            {isFetching ? 'Atualizando…' : `${pageItems.length} / ${total} itens`}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <select
+              className="input h-9"
+              value={perPage}
+              onChange={(e) => { setPage(1); setPerPage(parseInt(e.target.value, 10)); }}
+            >
+              {[10, 15, 20, 25, 50].map(n => <option key={n} value={n}>{n} por página</option>)}
+            </select>
             <button
               className="btn btn-ghost"
               disabled={page <= 1}
