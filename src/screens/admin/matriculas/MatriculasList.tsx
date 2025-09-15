@@ -125,6 +125,7 @@ export default function MatriculasList() {
     queryFn: () => listMatriculas(), // sem page/perPage -> tudo
     staleTime: 1000 * 10,
 
+
   });
 
   if (error) {
@@ -251,6 +252,7 @@ export default function MatriculasList() {
   }, [allMatriculas]);
 
 
+
   type TurmaNameMap = Record<string, string>;
 
   const turmasByIdsQuery = useQuery({
@@ -343,6 +345,7 @@ export default function MatriculasList() {
 
   /* ---------------------- UI ---------------------- */
 
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -424,6 +427,7 @@ export default function MatriculasList() {
                 </tr>
               ))}
 
+
               {!isFetching && pageItems.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-[color:var(--text-muted)]">
@@ -440,6 +444,7 @@ export default function MatriculasList() {
           {isFetching
             ? 'Atualizando…'
             : `${pageItems.length} exibidas • ${total} ${debounced ? 'filtradas' : 'no total'}`}
+
 
         </div>
 
