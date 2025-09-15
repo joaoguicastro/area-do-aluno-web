@@ -115,6 +115,7 @@ export default function MatriculasList() {
   /* ---- Busca e paginação (FRONT) ---- */
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+
   const perPage = 10;
   const debounced = useDebounce(q, 300);
 
@@ -123,6 +124,7 @@ export default function MatriculasList() {
     queryKey: ['matriculas-all'],
     queryFn: () => listMatriculas(), // sem page/perPage -> tudo
     staleTime: 1000 * 10,
+
   });
 
   if (error) {
@@ -248,6 +250,7 @@ export default function MatriculasList() {
     return Array.from(set);
   }, [allMatriculas]);
 
+
   type TurmaNameMap = Record<string, string>;
 
   const turmasByIdsQuery = useQuery({
@@ -266,6 +269,7 @@ export default function MatriculasList() {
 
   const turmasMap = useMemo(() => {
     const m: Record<string, string> = {};
+
     Object.assign(m, turmasByIdsQuery.data ?? {});
     (turmasQuery.data ?? []).forEach((t: Turma) => { if (t?.id && t?.nome) m[t.id] = t.nome; });
     return m;
@@ -338,6 +342,7 @@ export default function MatriculasList() {
   }
 
   /* ---------------------- UI ---------------------- */
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -435,6 +440,7 @@ export default function MatriculasList() {
           {isFetching
             ? 'Atualizando…'
             : `${pageItems.length} exibidas • ${total} ${debounced ? 'filtradas' : 'no total'}`}
+
         </div>
 
         <Pagination
