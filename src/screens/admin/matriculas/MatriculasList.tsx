@@ -24,6 +24,7 @@ import { useDebounce } from '../../../utils/useDebounce';
 import { Plus, Trash2 } from 'lucide-react';
 import { ConfirmModal } from '../../../ui/Delete';
 
+/* ---------------------- Utils ---------------------- */
 function formatISODate(iso?: string | null) {
   if (!iso) return '—';
   const ymd = iso.split('T')[0];
@@ -38,18 +39,92 @@ function formatBRL(n?: number | null) {
   catch { return String(n); }
 }
 
+function norm(s: string) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
+/* ---------------------- Pagination (front) ---------------------- */
+function Pagination({
+  page,
+  total,
+  perPage = 10,
+  onChange,
+  disabled = false,
+}: {
+  page: number;
+  total: number;
+  perPage?: number;
+  onChange: (p: number) => void;
+  disabled?: boolean;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const go = (p: number) => {
+    if (disabled) return;
+    const clamped = Math.max(1, Math.min(totalPages, p));
+    if (clamped !== page) onChange(clamped);
+  };
+
+  const pages: (number | '...')[] = [];
+  const win = 1;
+  const push = (v: number | '...') => pages[pages.length - 1] !== v && pages.push(v);
+
+  for (let p = 1; p <= totalPages; p++) {
+    const edge = p === 1 || p === totalPages;
+    const near = Math.abs(p - page) <= win;
+    if (edge || near) push(p);
+    else if (pages[pages.length - 1] !== '...') push('...');
+  }
+
+  return (
+    <div className="flex items-center justify-between mt-3">
+      <div className="text-xs text-[color:var(--text-muted)]">
+        {disabled ? 'Atualizando…' : `Página ${page} de ${totalPages} • ${perPage} por página • Total: ${total}`}
+      </div>
+      <div className="flex items-center gap-1">
+        <button className="btn btn-ghost" onClick={() => go(1)} disabled={disabled || page <= 1} title="Primeira">«</button>
+        <button className="btn btn-ghost" onClick={() => go(page - 1)} disabled={disabled || page <= 1} title="Anterior">‹</button>
+        {pages.map((p, i) =>
+          p === '...' ? (
+            <span key={`dots-${i}`} className="px-2 text-sm text-[color:var(--text-muted)]">…</span>
+          ) : (
+            <button
+              key={p}
+              className={`btn btn-ghost ${p === page ? 'bg-black/5 dark:bg-white/10' : ''}`}
+              onClick={() => go(p)}
+              disabled={disabled || p === page}
+              title={`Página ${p}`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button className="btn btn-ghost" onClick={() => go(page + 1)} disabled={disabled || page === totalPages} title="Próxima">›</button>
+        <button className="btn btn-ghost" onClick={() => go(totalPages)} disabled={disabled || page === totalPages} title="Última">»</button>
+      </div>
+    </div>
+  );
+}
+
+/* ====================== COMPONENTE ====================== */
 export default function MatriculasList() {
   const qc = useQueryClient();
+
+  /* ---- Busca e paginação (FRONT) ---- */
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
-  const debounced = useDebounce(q);
 
-  // 🔹 Busca TODAS as matrículas (sem paginação server-side)
-  const { data: allMatriculas, isFetching, error } = useQuery({
-    queryKey: ['matriculas', { refresh: true }],
-    queryFn: () => listMatriculas(),
-    staleTime: 10_000,
+  const perPage = 10;
+  const debounced = useDebounce(q, 300);
+
+  // carrega TODAS as matrículas (sem paginação no back)
+  const { data: rawResp, isFetching, error } = useQuery({
+    queryKey: ['matriculas-all'],
+    queryFn: () => listMatriculas({}), // sem page/perPage -> tudo
+    staleTime: 1000 * 10,
+
   });
 
   if (error) {
@@ -132,7 +207,7 @@ export default function MatriculasList() {
         dataInicio: '',
         dataFim: '',
       });
-      await qc.invalidateQueries({ queryKey: ['matriculas'] });
+      await qc.invalidateQueries({ queryKey: ['matriculas-all'] });
     } catch (e: any) {
       setErr(e?.response?.data?.message ?? 'Erro ao criar matrícula');
     } finally {
@@ -143,92 +218,88 @@ export default function MatriculasList() {
   async function handleDelete(id: string) {
     setPendingDeleteId(id);
     await deleteMatricula(id);
-    await qc.invalidateQueries({ queryKey: ['matriculas'] });
+    await qc.invalidateQueries({ queryKey: ['matriculas-all'] });
     setOpenModal(false);
     setPendingDeleteId(null);
   }
 
   const cursosMap = useMemo(() => {
     const m: Record<string, string> = {};
-    cursosQuery.data?.data?.forEach((c: Curso) => {
-      m[c.id] = c.nome;
-    });
+    const arr = (cursosQuery.data as any)?.data ?? cursosQuery.data ?? [];
+    arr?.forEach((c: Curso) => { if (c?.id) m[c.id] = c.nome; });
     return m;
   }, [cursosQuery.data]);
 
   const alunosMap = useMemo(() => {
     const m: Record<string, string> = {};
-    alunosQuery.data?.data?.forEach((a: Aluno) => {
-      m[a.id] = a.nome;
-    });
+    const arr = (alunosQuery.data as any)?.data ?? alunosQuery.data ?? [];
+    arr?.forEach((a: Aluno) => { if (a?.id) m[a.id] = a.nome; });
     return m;
   }, [alunosQuery.data]);
 
-  // 🔎 Filtro por texto (cliente)
-  const filtered: Matricula[] = useMemo(() => {
-    const base = allMatriculas ?? [];
-    const term = debounced.trim().toLowerCase();
-    if (!term) return base;
+  // normaliza resposta do back (array puro OU {data: []})
+  const allMatriculas: Matricula[] = useMemo(() => {
+    const d = Array.isArray(rawResp) ? rawResp : (rawResp as any)?.data ?? [];
+    return (d ?? []) as Matricula[];
+  }, [rawResp]);
 
-    return base.filter((m) => {
-      const aluno = m.alunoNome ?? alunosMap[m.alunoId] ?? m.alunoId;
-      const curso = m.cursoNome ?? cursosMap[m.cursoId] ?? m.cursoId;
-      const turma = m.turmaNome ?? m.turmaId ?? '';
-      return (
-        String(aluno).toLowerCase().includes(term) ||
-        String(curso).toLowerCase().includes(term) ||
-        String(turma).toLowerCase().includes(term)
-      );
-    });
-  }, [allMatriculas, debounced, alunosMap, cursosMap]);
-
-  // 📄 Paginação no cliente
-  const total = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const start = (page - 1) * perPage;
-  const pageItems = filtered.slice(start, start + perPage);
-
-  // ids de turmas presentes NA PÁGINA (para map de nomes)
-  const turmaIdsFromTable = useMemo(() => {
+  // ids de turmas presentes na LISTA FILTRADA/PAGINADA (vamos buscar nomes p/ exibir)
+  const turmaIdsFromAll = useMemo(() => {
     const set = new Set<string>();
-    pageItems.forEach((m: Matricula) => {
-      if (m.turmaId) set.add(m.turmaId);
-    });
+    allMatriculas.forEach((m) => { if (m.turmaId) set.add(m.turmaId); });
     return Array.from(set);
-  }, [pageItems]);
+  }, [allMatriculas]);
+
 
   type TurmaNameMap = Record<string, string>;
 
   const turmasByIdsQuery = useQuery({
-    queryKey: ['turmas-by-ids', turmaIdsFromTable],
-    // retorna um MAP pronto { id: nome }
+    queryKey: ['turmas-by-ids', turmaIdsFromAll],
     queryFn: async (): Promise<TurmaNameMap> => {
-      const ids = turmaIdsFromTable.filter(Boolean);
+      const ids = turmaIdsFromAll.filter(Boolean);
       if (ids.length === 0) return {};
       const turmas = await Promise.all(ids.map((id) => getTurmaById(id)));
       const map: TurmaNameMap = {};
-      turmas.forEach((t) => {
-        if (t?.id && t?.nome) map[t.id] = t.nome;
-      });
+      turmas.forEach((t) => { if (t?.id && t?.nome) map[t.id] = t.nome; });
       return map;
     },
-    enabled: turmaIdsFromTable.length > 0,
+    enabled: turmaIdsFromAll.length > 0,
     staleTime: 1000 * 60 * 5,
   });
 
   const turmasMap = useMemo(() => {
     const m: Record<string, string> = {};
-    // nomes vindos dos ids presentes na TABELA (página atual)
+
     Object.assign(m, turmasByIdsQuery.data ?? {});
-    // nomes vindos do curso selecionado (útil para o select do modal)
-    (turmasQuery.data ?? []).forEach((t: Turma) => {
-      if (t?.id && t?.nome) m[t.id] = t.nome;
-    });
+    (turmasQuery.data ?? []).forEach((t: Turma) => { if (t?.id && t?.nome) m[t.id] = t.nome; });
     return m;
   }, [turmasByIdsQuery.data, turmasQuery.data]);
 
-  /* ---------------------- Parcelas Modal ---------------------- */
+  /* --------- FILTRO (front) + PAGINAÇÃO (front) --------- */
+  const filtered: Matricula[] = useMemo(() => {
+    const nq = norm(debounced);
+    if (!nq) return allMatriculas;
 
+    return allMatriculas.filter((m) => {
+      const aluno = m.alunoNome ?? alunosMap[m.alunoId] ?? m.alunoId ?? '';
+      const curso = m.cursoNome ?? cursosMap[m.cursoId] ?? m.cursoId ?? '';
+      const turma = m.turmaNome ?? (m.turmaId ? (turmasMap[m.turmaId] ?? m.turmaId) : '') ?? '';
+      const status = m.status ?? '';
+      const texto = `${aluno} ${curso} ${turma} ${status} ${m.id ?? ''}`;
+      return norm(texto).includes(nq);
+    });
+  }, [debounced, allMatriculas, alunosMap, cursosMap, turmasMap]);
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  // clamp page quando filtro muda (evita ficar em página > totalPages)
+  const safePage = Math.min(page, totalPages) || 1;
+  const start = (safePage - 1) * perPage;
+  const end = start + perPage;
+  const pageItems = filtered.slice(start, end);
+
+  /* ---------------------- Parcelas Modal ---------------------- */
   const [parcelasOpen, setParcelasOpen] = useState(false);
   const [selected, setSelected] = useState<Matricula | null>(null);
 
@@ -261,14 +332,15 @@ export default function MatriculasList() {
       pagoEm: f.pagoEm || undefined,
     });
     await qc.invalidateQueries({ queryKey: ['parcelas-by-matricula', selected?.id] });
-    await qc.invalidateQueries({ queryKey: ['matriculas'] });
+    await qc.invalidateQueries({ queryKey: ['matriculas-all'] });
   }
 
   async function handleEstorno(p: Parcela) {
     await estornarParcela(p.id);
     await qc.invalidateQueries({ queryKey: ['parcelas-by-matricula', selected?.id] });
-    await qc.invalidateQueries({ queryKey: ['matriculas'] });
+    await qc.invalidateQueries({ queryKey: ['matriculas-all'] });
   }
+
 
   return (
     <div className="space-y-4">
@@ -276,14 +348,26 @@ export default function MatriculasList() {
         <h1 className="text-2xl font-semibold">Matrículas</h1>
         <div className="flex-1" />
         <div className="flex items-center gap-2">
-          <Input
-            placeholder="Buscar por aluno, curso, turma…"
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-          />
+          <div className="relative">
+            <Input
+              placeholder="Buscar por aluno, curso, turma…"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1); // reset pagina quando busca muda
+              }}
+            />
+            {q && (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-[color:var(--text-muted)]"
+                onClick={() => { setQ(''); setPage(1); }}
+                title="Limpar"
+              >
+                ×
+              </button>
+            )}
+          </div>
           <Button onClick={() => setOpen(true)}>
             <Plus size={16} /> Nova matrícula
           </Button>
@@ -321,13 +405,7 @@ export default function MatriculasList() {
                   </td>
                   <td className="py-3">
                     <div className="flex items-center gap-2">
-                      <button
-                        className="btn btn-ghost"
-                        onClick={() => openParcelas(m)}
-                      >
-                        Parcelas
-                      </button>
-
+                      <button className="btn btn-ghost" onClick={() => openParcelas(m)}>Parcelas</button>
                       <button
                         className="btn btn-ghost text-red-600"
                         title="Excluir"
@@ -344,10 +422,11 @@ export default function MatriculasList() {
                   </td>
                 </tr>
               ))}
+
               {!isFetching && pageItems.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-[color:var(--text-muted)]">
-                    Nenhuma matrícula encontrada.
+                    {debounced ? 'Nenhuma matrícula encontrada para o filtro.' : 'Nenhuma matrícula cadastrada.'}
                   </td>
                 </tr>
               )}
@@ -355,38 +434,21 @@ export default function MatriculasList() {
           </table>
         </div>
 
-        {/* Paginação cliente */}
-        <div className="flex items-center justify-between mt-3">
-          <div className="text-xs text-[color:var(--text-muted)]">
-            {isFetching ? 'Atualizando…' : `${pageItems.length} / ${total} itens`}
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              className="input h-9"
-              value={perPage}
-              onChange={(e) => { setPage(1); setPerPage(parseInt(e.target.value, 10)); }}
-            >
-              {[10, 15, 20, 25, 50].map(n => <option key={n} value={n}>{n} por página</option>)}
-            </select>
-            <button
-              className="btn btn-ghost"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Anterior
-            </button>
-            <div className="text-sm">
-              {page} / {totalPages}
-            </div>
-            <button
-              className="btn btn-ghost"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Próxima
-            </button>
-          </div>
+        {/* contador & paginação (FRONT) */}
+        <div className="mt-2 text-xs text-[color:var(--text-muted)]">
+          {isFetching
+            ? 'Atualizando…'
+            : `${pageItems.length} exibidas • ${total} ${debounced ? 'filtradas' : 'no total'}`}
+
         </div>
+
+        <Pagination
+          page={safePage}
+          total={total}
+          perPage={perPage}
+          disabled={isFetching}
+          onChange={(p) => setPage(p)}
+        />
       </Card>
 
       {/* Modal: Nova matrícula */}
@@ -405,7 +467,7 @@ export default function MatriculasList() {
                     required
                   >
                     <option value="" disabled>Selecione um aluno</option>
-                    {alunosQuery.data?.data?.map((a: Aluno) => (
+                    {(alunosQuery.data as any)?.data?.map((a: Aluno) => (
                       <option key={a.id} value={a.id}>{a.nome}</option>
                     ))}
                   </select>
@@ -422,7 +484,7 @@ export default function MatriculasList() {
                     required
                   >
                     <option value="" disabled>Selecione um curso</option>
-                    {cursosQuery.data?.data?.map((c: Curso) => (
+                    {(cursosQuery.data as any)?.data?.map((c: Curso) => (
                       <option key={c.id} value={c.id}>{c.nome}</option>
                     ))}
                   </select>
@@ -546,12 +608,12 @@ export default function MatriculasList() {
                               <select
                                 className="input"
                                 value={baixaForm[p.id]?.formaPagamento ?? 'DINHEIRO'}
-                                onChange={(e) => setBaixaForm(s => ({ 
-                                  ...s, 
-                                  [p.id]: { 
-                                    ...(s[p.id] ?? { valorPago: String(p.valor) }), 
-                                    formaPagamento: e.target.value as FormaPagamento 
-                                  } 
+                                onChange={(e) => setBaixaForm(s => ({
+                                  ...s,
+                                  [p.id]: {
+                                    ...(s[p.id] ?? { valorPago: String(p.valor) }),
+                                    formaPagamento: e.target.value as FormaPagamento
+                                  }
                                 }))}
                               >
                                 <option value="DINHEIRO">DINHEIRO</option>
@@ -562,17 +624,17 @@ export default function MatriculasList() {
                               <Input
                                 placeholder={String(p.valor)}
                                 value={baixaForm[p.id]?.valorPago ?? String(p.valor)}
-                                onChange={(e) => setBaixaForm(s => ({ 
-                                  ...s, 
-                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO' }), valorPago: e.target.value } 
+                                onChange={(e) => setBaixaForm(s => ({
+                                  ...s,
+                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO' }), valorPago: e.target.value }
                                 }))}
                               />
                               <Input
                                 type="datetime-local"
                                 value={baixaForm[p.id]?.pagoEm ?? ''}
-                                onChange={(e) => setBaixaForm(s => ({ 
-                                  ...s, 
-                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO', valorPago: String(p.valor) }), pagoEm: e.target.value } 
+                                onChange={(e) => setBaixaForm(s => ({
+                                  ...s,
+                                  [p.id]: { ...(s[p.id] ?? { formaPagamento: 'DINHEIRO', valorPago: String(p.valor) }), pagoEm: e.target.value }
                                 }))}
                               />
                             </div>
