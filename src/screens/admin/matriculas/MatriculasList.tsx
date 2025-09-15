@@ -122,7 +122,7 @@ export default function MatriculasList() {
   // carrega TODAS as matrículas (sem paginação no back)
   const { data: rawResp, isFetching, error } = useQuery({
     queryKey: ['matriculas-all'],
-    queryFn: () => listMatriculas({}), // sem page/perPage -> tudo
+    queryFn: () => listMatriculas(), // sem page/perPage -> tudo
     staleTime: 1000 * 10,
 
   });
@@ -341,6 +341,7 @@ export default function MatriculasList() {
     await qc.invalidateQueries({ queryKey: ['matriculas-all'] });
   }
 
+  /* ---------------------- UI ---------------------- */
 
   return (
     <div className="space-y-4">
